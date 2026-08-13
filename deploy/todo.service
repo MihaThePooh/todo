@@ -1,0 +1,20 @@
+[Unit]
+Description=Todo store (personal task list)
+After=network.target
+
+[Service]
+Type=simple
+User=edgelab
+Group=edgelab
+WorkingDirectory=/home/edgelab/tools/todo
+ExecStart=/usr/bin/python3 /home/edgelab/tools/todo/server.py
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/edgelab/tools/todo/data
+
+[Install]
+WantedBy=multi-user.target

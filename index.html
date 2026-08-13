@@ -1,0 +1,4061 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f7f6f4">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Дела">
+<title>Дела</title>
+<style>
+:root {
+  --bg: #f7f6f4;
+  --card: #ffffff;
+  --fg: #1a1714;
+  --muted: #8b837a;
+  --line: #e3ded7;
+  --accent: #2f6f4e;
+  /* Высота одной строки текста дела: 16px × 1.45. По ней выравниваем
+     всё, что стоит в строке рядом с текстом. */
+  --rowh: 23.2px;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+/* Интерфейс — не текст документа: выделять в нём нечего. Долгий тап
+   по делу больше не поднимает синюю подсветку и меню «копировать».
+   Поля ввода из запрета исключены, иначе в них нельзя было бы
+   ни выделить, ни поправить набранное. */
+body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+textarea, input {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/* Смахнутая карточка уходит левее своего места в списке, за край
+   экрана. Обрезать её должен экран, поэтому клип живёт здесь, а не
+   на карточке. Именно clip, а не hidden: hidden сделал бы body
+   прокручиваемым блоком и залипающая шапка перестала бы липнуть. */
+html, body { overflow-x: clip; }
+
+body {
+  margin: 0;
+  /* Отступ снизу был заложен под форму добавления. Формы больше нет. */
+  padding: 0 0 calc(18px + env(safe-area-inset-bottom));
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(5px + env(safe-area-inset-top)) 14px 5px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+/* Шапка набрана так же, как заголовки разделов: капслок, тот же размер,
+   тот же приглушённый цвет. Она подпись, а не заголовок страницы. */
+h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Бургер той же формы, что «+» и карандаш в заголовках разделов. */
+#burger {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.6px solid #c3bcb2;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  padding: 0;
+  cursor: pointer;
+}
+#burger svg { width: 13px; height: 13px; display: block; }
+#burger:active { transform: scale(.92); }
+
+/* Меню: лист выезжает из-под шапки, остальное гаснет. */
+#menu {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(16, 13, 11, .45);
+  animation: fade .18s ease;
+}
+#menu.out { animation: fade .16s ease reverse forwards; }
+#menu .sheet {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: calc(44px + env(safe-area-inset-top));
+  max-height: 76vh;
+  overflow: auto;
+  padding: 6px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .16);
+  animation: riseIn .2s cubic-bezier(.2, .8, .2, 1);
+}
+#menu .row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 11px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+#menu .row:active { background: #f1eee9; }
+#menu .row svg { width: 18px; height: 18px; flex: 0 0 auto; color: var(--muted); }
+
+/* Раскрывающаяся часть пункта — та же механика, что у архива.
+   Высоту здесь НЕ задаём: fold() ставит её сам и в конце снимает,
+   а постоянное height:0 схлопнуло бы блок сразу после раскрытия. */
+#menu .body { overflow: hidden; transition: height .24s cubic-bezier(.2,.8,.2,1); }
+#menu .inner { padding: 2px 11px 12px; }
+#menu p {
+  margin: 0 0 9px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+#menu .link {
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  font: 12px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color: var(--fg);
+  word-break: break-all;
+  -webkit-user-select: text;
+  user-select: text;
+}
+/* Перестановка разделов. Класс mgrip, а не grip: у полоски на карточке
+   дела свои отрицательные отступы под её раскладку, здесь они бы всё
+   перекосили. Вид тот же, правила свои. */
+#menu .mover { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 2px; }
+#menu .mrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  font-size: 14px;
+  touch-action: none;   /* иначе телефон скроллит вместо перетаскивания */
+}
+/* Крупнее самой полоски: за неё цепляются пальцем, а не мышью.
+   Отступы дают площадь нажатия, отрицательные поля съедают её обратно
+   в раскладке — строка от этого почти не растёт. */
+#menu .mgrip {
+  flex: 0 0 auto;
+  color: #c3bcb2;
+  font-size: 24px;
+  line-height: 1;
+  padding: 10px 13px;
+  margin: -8px -8px -8px -6px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+#menu .mname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Строка, которую держат: приподнята и обведена, чтобы взгляд её не терял. */
+#menu .mrow.lift {
+  border-color: var(--accent);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .16);
+}
+
+#menu .acts { display: flex; gap: 8px; margin-top: 9px; }
+#menu .acts button {
+  flex: 1 1 0;
+  padding: 10px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+/* Класс намеренно свой: .ghost в этом файле — карточка, которую тащат
+   пальцем, у неё position:fixed. Кнопка с тем же именем выпадала из
+   строки и наезжала на соседнюю. */
+#menu .acts .plain {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--fg);
+}
+/* Кнопки панели перестановки — свой класс, не общий .acts: у панели
+   «перенести на другое устройство» кнопки со словами, им ширина нужна,
+   а здесь две короткие и растягивать их не на что. Роли и цвета те же,
+   что у «ок» и «×» при правке дела, чтобы не заводить третий язык. */
+#menu .macts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+#menu .macts button {
+  flex: 0 0 auto;
+  min-width: 56px;
+  height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+#menu .macts .mno { background: #c0392b; font-size: 17px; }
+#menu .macts button:active { transform: scale(.97); }
+#menu .acts button:active { transform: scale(.97); }
+#menu .warn { color: #a8452f; }
+
+/* Приветствие для того, кто пришёл по голой ссылке. Приложение за ним
+   видно целиком, только пустое, — сразу понятно, что получишь. */
+#hello {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 18px;
+  background: rgba(16, 13, 11, .45);
+  animation: fade .2s ease;
+}
+/* Класс намеренно свой: .box в этом файле — чекбокс дела, 21x21,
+   и карточка приветствия унаследовала бы его размеры. */
+#hello .sheet {
+  width: 100%;
+  max-width: 330px;
+  padding: 18px 18px 16px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .18);
+  animation: riseIn .22s cubic-bezier(.2, .8, .2, 1);
+}
+#hello b { display: block; margin-bottom: 8px; font-size: 17px; font-weight: 600; }
+#hello p { margin: 0 0 14px; font-size: 14px; line-height: 1.5; color: var(--muted); }
+/* Отступ держим на кнопке, а не на абзаце: у абзаца стоит класс last
+   с нулевым нижним полем — он нужен, когда текст подменяется прощальным
+   сообщением и кнопки под ним уже нет. */
+#hello .go {
+  width: 100%;
+  margin-top: 16px;
+  padding: 12px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+#hello .go:active { transform: scale(.98); }
+/* Приветствие не пропадает рывком: сначала гаснет текст с кнопкой,
+   на их месте появляется сообщение, и только потом уходит вся
+   подложка. Высоту карточки ведём отдельно — иначе она скачет
+   в момент подмены текста. */
+#hello .inner { transition: opacity .45s ease; }
+#hello .inner.gone { opacity: 0; }
+#hello .sheet { transition: height .3s cubic-bezier(.2, .8, .2, 1); }
+#hello .last { margin-bottom: 0; }
+#hello.out { opacity: 0; transition: opacity .4s ease; }
+
+/* Показ приёмов. Экран НЕ гасим: приложение должно быть видно как
+   есть. Слой поверх нужен только чтобы случайный тап не сбил показ. */
+#tour {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: none;
+}
+#tour.out { opacity: 0; transition: opacity .3s ease; }
+/* «Пропустить» лежит в body, а не внутри #tour: у того свой z-index,
+   он образует слой, и кнопка не смогла бы подняться над окном вопроса —
+   а прервать показ надо в любой момент, в том числе когда оно открыто. */
+.tourskip {
+  position: fixed;
+  z-index: 90;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  padding: 9px 18px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--card);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .12);
+  cursor: pointer;
+}
+
+/* Подпись стоит вплотную к тому, о чём говорит, а не внизу экрана:
+   иначе взгляд мечется между текстом и местом действия.
+   Лежит в body, а не внутри #tour: тот со своим z-index образует
+   отдельный слой, из которого не подняться выше. */
+.near {
+  position: absolute;
+  /* Выше окна вопроса (80): показ подводит и к нему тоже, а подсказка,
+     оказавшаяся под окном, была бы не видна. */
+  z-index: 82;
+  max-width: 250px;
+  padding: 9px 12px;
+  background: var(--accent);
+  border: 0;
+  border-radius: 11px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, .28);
+  font-size: 14px;
+  line-height: 1.4;
+  font-weight: 500;
+  color: #fff;
+  animation: riseIn .3s cubic-bezier(.2, .8, .2, 1);
+}
+
+/* Круг на месте касания: вдвое больше самой кнопки и прозрачный,
+   чтобы сквозь него было видно, по чему именно нажали. */
+.tapdot {
+  position: absolute;
+  z-index: 81;   /* см. .near: круг тоже должен ложиться поверх окна */
+  border: 3px solid rgba(47, 111, 78, .95);
+  border-radius: 50%;
+  background: rgba(47, 111, 78, .3);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .5);
+  pointer-events: none;
+  animation: tapgrow 1s ease-out forwards;
+}
+@keyframes tapgrow {
+  from { transform: scale(.3); opacity: 0; }
+  20%  { opacity: 1; }
+  60%  { opacity: 1; }
+  to   { transform: scale(1); opacity: 0; }
+}
+/* Жест — не точка: круг едет вместе с «пальцем» и гаснет в конце,
+   поэтому у него не разрастание, а обычный переезд. */
+.tapdot.hold { animation: none; opacity: 1; transition: opacity .3s ease; }
+.tapdot.hold.gone { opacity: 0; }
+
+#state {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+#state.err { color: #b03030; font-weight: 600; }
+
+section { margin: 18px 12px 0; }
+/* Под шапкой лишний воздух ни к чему — экран небольшой. */
+section:first-of-type { margin-top: 11px; }
+
+section > h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px 4px;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Три рабочих раздела — крупнее прочих: в них попадают пальцем чаще
+   всего. Текст +33%, кнопки +50%, зазор между ними шире. */
+h2.main { font-size: 16px; margin-bottom: 10px; }
+h2.main .tools { gap: 12px; }
+h2.main .plus,
+h2.main .pen,
+h2.main .del,
+h2.main .okmini,
+h2.main .nomini {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+h2.main .plus { font-size: 22px; }
+h2.main .pen svg,
+h2.main .del svg { width: 18px; height: 18px; }
+h2.main .okmini,
+h2.main .nomini { min-width: 32px; font-size: 13px; padding: 0; }
+h2.main .nomini { font-size: 17px; }
+
+/* Правая группа кнопок заголовка. margin-left:auto отжимает её к краю:
+   он совпадает с правым краем карточек, так ближе большому пальцу. */
+.tools {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Кнопка «+» в заголовке — той же формы, что и чекбокс у дела. */
+.plus {
+  width: 21px;
+  height: 21px;
+  flex: 0 0 auto;
+  border: 1.6px solid #c3bcb2;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  font: 400 15px/1 -apple-system, "Segoe UI", Roboto, sans-serif;
+  cursor: pointer;
+  padding: 0;
+}
+.plus:active { transform: scale(.92); }
+
+/* Карандаш — переименовать раздел. Квадрат той же формы, что «+». */
+.pen {
+  width: 21px;
+  height: 21px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.6px solid #c3bcb2;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+}
+.pen svg { width: 12px; height: 12px; display: block; }
+.pen:active { transform: scale(.92); }
+
+/* Удалить раздел. Нарочно теми же цветами, что карандаш: красной эта
+   кнопка стояла бы в заголовке пятном и притягивала палец. Тормозит
+   здесь не цвет, а вопрос с отсчётом. */
+.del {
+  width: 21px;
+  height: 21px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.6px solid #c3bcb2;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+}
+.del svg { width: 12px; height: 12px; display: block; }
+.del:active { transform: scale(.92); }
+/* Последний оставшийся раздел удалить нельзя: класть дела станет некуда. */
+/* hidden сам по себе бессилен: у кнопок задан display, и он его
+   перебивает. На время переименования обе кнопки уходят, а их места
+   занимают «отмена» и «ок» — ряд остаётся из трёх, ничего не прыгает. */
+.del[hidden], .pen[hidden] { display: none; }
+
+/* «ок» при переименовании раздела. Ростом и формой — как карандаш
+   рядом, цветом — как «ок» у дела. */
+.okmini, .nomini {
+  height: 21px;
+  min-width: 21px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  font-size: 10px;
+  cursor: pointer;
+}
+.okmini:active, .nomini:active { transform: scale(.92); }
+
+/* Поле переименования занимает место заголовка и выглядит ровно как он:
+   тот же шрифт, капс, разрядка и цвет, без рамки и подчёркивания. Что
+   идёт правка, видно по выделению и мигающему курсору — этого хватает.
+   Форме ничего не достаётся по наследству само: font, цвет и регистр
+   браузер задаёт ей своими стилями, поэтому забираем их обратно явно. */
+.tt input {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  outline: none;
+}
+
+/* «отмена» рядом с «ок»: та же кнопка, только красная. */
+.nomini {
+  background: #c0392b;
+  font-size: 13px;
+}
+
+/* Значок «i» — тонкий кружок, внутри пусто. */
+.info {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.4px solid #c3bcb2;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font: 600 11px/1 Georgia, "Times New Roman", serif;
+  cursor: pointer;
+  padding: 0;
+}
+.info:active { transform: scale(.9); }
+
+/* Облачко-пояснение. Хвостик — квадрат, повёрнутый на 45°, поэтому
+   выглядит треугольником, торчащим из верхнего края. */
+/* Подложка накрывает всё, включая липкую шапку (у неё z-index 20):
+   пока читаешь пояснение, остальное приглушено и не отвлекает.
+   Заодно она перехватывает касания — страница под ней не прокрутится. */
+#tip {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(16, 13, 11, .45);
+  animation: fade .18s ease;
+}
+#tip.out { animation: fade .16s ease reverse forwards; }
+
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+#tip .bubble {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  z-index: 1;
+  max-height: 72vh;
+  overflow: auto;
+  padding: 13px 15px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  box-shadow: 0 12px 34px rgba(0,0,0,.16);
+  animation: riseIn .2s cubic-bezier(.2,.8,.2,1);
+}
+
+/* Смысловой блок заголовка: название вместе со своей кнопкой «i».
+   В строке архива таких блока два — архив и корзина, — и подсвечивается
+   только тот, про который спросили. */
+.grp {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* На время пояснения блок поднимается НАД затемнением и обводится
+   такой же рамкой, как окошко. Рамка через outline, а не border:
+   outline не занимает места в потоке, поэтому заголовок не растёт
+   и соседние блоки не съезжают. outline-offset даёт зазор, а тень
+   того же цвета, что фон, этот зазор заливает — иначе в нём
+   просвечивало бы затемнение. */
+.grp.spot {
+  position: relative;
+  z-index: 61;
+  pointer-events: none;   /* тап по подсвеченному блоку закрывает пояснение */
+  border-radius: 12px;
+  outline: 1px solid var(--line);
+  outline-offset: 7px;
+  background: var(--bg);
+  box-shadow: 0 0 0 7px var(--bg);
+}
+#tip b {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+#tip p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-line;   /* переносы в тексте — как написаны */
+}
+
+#arcHead { cursor: pointer; user-select: none; }
+#arcHead .caret { transition: transform .18s ease; }
+#arcHead.open .caret { transform: rotate(90deg); }
+
+.list { min-height: 14px; }
+
+/* .item — только обойма: обрезает то, что выехало за край, и держит
+   под собой кнопку удаления. Сама карточка — .card внутри. Такое
+   разделение нужно, чтобы вбок уезжала карточка ЦЕЛИКОМ, вместе
+   с рамкой, а не одно её содержимое. */
+.item {
+  position: relative;
+  margin-bottom: 6px;
+  touch-action: pan-y;   /* вертикальная прокрутка остаётся браузеру,
+                            горизонтальные движения приходят нам */
+}
+
+/* Видимая карточка. position+z-index обязательны: без них абсолютная
+   кнопка удаления рисуется ПОВЕРХ карточки и видна всегда. */
+.card {
+  position: relative;
+  z-index: 1;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  transition: transform .22s cubic-bezier(.2,.8,.2,1);
+}
+.item.swiping .card { transition: none; }
+
+/* will-change поднимает слой на отдельную растеризацию, и на дробном
+   масштабе экрана его край не совпадает с краем родителя. Держим его
+   ТОЛЬКО пока палец ведёт: в состоянии «открыто» карточка уже стоит,
+   ускорять нечего. */
+.item.swiping .card { will-change: transform; }
+
+.face {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+}
+
+/* Выделенное дело. Кольцо рисуется псевдоэлементом, а не рамкой: оно
+   лежит поверх карточки и НЕ занимает места, поэтому список не
+   дёргается в момент включения.
+
+   Как получается именно кольцо: элемент растянут на 2px наружу от
+   карточки, залит градиентом и закрыт маской из двух слоёв —
+   всё поле и только его внутренняя часть. Режим exclude вычитает
+   второй из первого, остаётся полоса в 3px по краю: два пикселя
+   снаружи, один внутри.
+
+   Градиент втрое шире элемента и едет вбок — отсюда перелив. */
+.item.star .card { border-color: transparent; }
+
+.item.star .card::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 12px;
+  padding: 3px;
+  pointer-events: none;
+  background: linear-gradient(90deg,
+    #2f6f4e, #17a07a, #4aa3e0, #7b5bd6, #d1477a, #e0952a, #2f6f4e);
+  background-size: 300% 100%;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: ringflow 6s linear infinite;
+}
+
+/* Разгорание — только в момент нажатия на звезду: класс вешает
+   обработчик и снимает через полсекунды.
+   Держать ringin в правиле выше было нельзя: разметка пересобирается
+   на каждую перерисовку, а при загрузке страница рисуется дважды —
+   сперва из памяти браузера, потом по ответу сервера. Кольцо честно
+   зажигалось заново, и со стороны это выглядело как мигание. */
+.item.star.fresh .card::before {
+  animation: ringflow 6s linear infinite, ringin .5s ease both;
+}
+
+/* Разгорается: тонкое и бледное превращается в толстое и яркое. */
+@keyframes ringin {
+  from { opacity: 0; padding: 1px; inset: 0px; }
+  to   { opacity: 1; padding: 3px; inset: -2px; }
+}
+@keyframes ringflow { to { background-position: -300% 0; } }
+
+/* В архиве и корзине карточек как таковых нет — кольцу не за что
+   зацепиться, оно только мешало бы читать список. */
+#archive .item.star .card::before,
+#bin .item.star .card::before { display: none; }
+
+/* Две кнопки под карточкой: звезда ближе к тексту, удаление с краю —
+   опасное действие дальше от пальца. 6 + 64 + 6 + 64 = 140, ровно на
+   столько уезжает карточка. */
+.trash, .fav {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 64px;
+  border: 0;
+  border-radius: 10px;
+  padding: 0;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  visibility: hidden;   /* пока не смахнули — их нет совсем */
+}
+.trash { right: 0; background: #c0392b; }
+.fav { right: 70px; background: #c8951b; }
+.item.swiping .trash, .item.open .trash,
+.item.swiping .fav, .item.open .fav { visibility: visible; }
+
+/* Звезда пустая: виден только контур. При нажатии заливается и слегка
+   подрастает — подтверждение до того, как карточка уедет обратно. */
+.fav svg path {
+  fill: currentColor;
+  fill-opacity: 0;
+  transition: fill-opacity .28s ease;
+}
+.fav svg { transition: transform .28s cubic-bezier(.2,.8,.2,1); }
+.fav.lit svg path { fill-opacity: 1; }
+.fav.lit svg { transform: scale(1.16); }
+
+/* Подложка под карточкой прозрачная — сквозь щель на дробном масштабе
+   виден фон страницы, а не красное. Красное лежит только справа, ровно
+   там, где карточка уже уехала. */
+
+.trash svg { width: 23px; height: 23px; display: block; }
+
+/* Сама перетаскиваемая копия, летит за пальцем. */
+.ghost {
+  position: fixed;
+  z-index: 100;
+  pointer-events: none;
+  /* Радиус тот же, что у карточки внутри. Без него тень рисуется от
+     квадрата, и на скруглениях остаются светлые уголки: туда тень уже
+     не заходит, а карточка ещё не дошла. */
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.20);
+  opacity: .97;
+  margin: 0;
+  transform: scale(1.02);
+  transition: transform .14s ease, box-shadow .14s ease;
+}
+/* Ghost «приземляется»: тень и увеличение уходят, пока он летит в гнездо. */
+.ghost.landing { transform: scale(1); box-shadow: 0 2px 8px rgba(0,0,0,.10); }
+
+/* Не полоска, а пустое гнездо в рост карточки: видно, куда именно она
+   встанет, и есть куда прилететь. */
+.drop {
+  border: 1.5px dashed #cec7bd;
+  border-radius: 10px;
+  background: rgba(0,0,0,.018);
+  margin-bottom: 6px;
+  box-sizing: border-box;
+  transition: height .16s ease;
+}
+
+/* Всё, что стоит в строке рядом с текстом, ровно в одну строку высотой
+   и центрирует своё содержимое. Тогда оптические центры совпадают
+   с центром ПЕРВОЙ строки текста, а не с серединой карточки: у дела
+   в три строки ручка и чекбокс остаются наверху, рядом с началом. */
+.grip {
+  flex: 0 0 auto;
+  width: 26px;
+  height: var(--rowh);
+  /* Отрицательный отступ справа съедает пустоту внутри кнопки: значок
+     узкий, кнопка широкая (в неё надо попадать пальцем), и без этого
+     до чекбокса выходило вдвое больше, чем от чекбокса до текста.
+     Область нажатия при этом остаётся прежней. */
+  margin: 0 -9px 0 -4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #c3bcb2;
+  cursor: grab;
+  touch-action: none;   /* иначе телефон начнёт скроллить вместо перетаскивания */
+  user-select: none;
+  font-size: 15px;
+}
+
+.box {
+  flex: 0 0 auto;
+  width: 21px;
+  height: 21px;
+  /* квадрат остаётся квадратом, поэтому центрируем его отступом */
+  margin-top: calc((var(--rowh) - 21px) / 2);
+  border: 1.6px solid #c3bcb2;
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+}
+.box:active { transform: scale(.92); }
+
+/* Момент отметки: рамка заливается, галочка проявляется, квадратик
+   коротко подпрыгивает — и только после этого дело уезжает в «сделано». */
+.box.ticked {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  animation: tick .3s cubic-bezier(.2,.8,.2,1);
+}
+@keyframes tick {
+  0%   { transform: scale(1);    }
+  40%  { transform: scale(1.22); }
+  100% { transform: scale(1);    }
+}
+.box.ticked:active { transform: none; }
+
+/* Галочка у сделанного дела — метка, а не кнопка: не нажимается
+   и не приседает под пальцем. */
+.box.mark {
+  border: 0;
+  color: var(--accent);
+  cursor: default;
+  opacity: 1;
+}
+.box.mark:active { transform: none; }
+
+.txt {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.txt a { color: var(--accent); }
+
+.txt textarea {
+  display: block;   /* по умолчанию inline-block: садится на базовую линию
+                       и оставляет под собой пустую полосу — от неё карточка
+                       и подрастала при открытии правки */
+  width: 100%;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  line-height: inherit;
+  color: inherit;
+  background: none;
+  resize: none;
+  outline: none;
+  overflow: hidden;
+  vertical-align: top;
+}
+
+.kill {
+  flex: 0 0 auto;
+  height: var(--rowh);
+  display: flex;
+  align-items: center;
+  border: 0;
+  background: none;
+  color: #cdc6bd;
+  font-size: 19px;
+  line-height: 1;
+  padding: 0 2px 0 6px;
+  cursor: pointer;
+}
+
+#done .card { border-color: #e8e3db; background: #f2f0ec; }
+#done .txt { color: var(--muted); text-decoration: line-through; }
+
+.empty { padding: 4px 6px 10px; color: #b8b0a6; font-size: 14px; }
+
+/* Заглушки на время первой загрузки. Занимают ровно столько же места,
+   сколько займут настоящие карточки, — поэтому список не схлопывается
+   и не прыгает, когда данные приходят. */
+.item.skel { pointer-events: none; }
+
+.sk {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #ece8e3;
+}
+.sk-grip { flex: 0 0 auto; width: 14px; height: 14px; margin-top: 5px; }
+.sk-box  { flex: 0 0 auto; width: 21px; height: 21px; margin-top: 1px; border-radius: 5px; }
+.sk-line { height: 12px; margin-top: 6px; }
+
+/* Блик пробегает слева направо — видно, что идёт работа, а не зависло. */
+.sk::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.8), transparent);
+  animation: shimmer 1.3s infinite;
+}
+@keyframes shimmer { to { transform: translateX(100%); } }
+
+/* Кнопки «ок» и «×».
+   Высота задана жёстко и равна одной строке текста (16px × 1.45 = 23px):
+   кнопка вписывается в строку дела и не разгоняет карточку по высоте.
+   Отступы только по бокам — вертикальные снова добавили бы высоту. */
+.ok, .nope {
+  flex: 0 0 auto;
+  height: var(--rowh);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  margin: 0;
+}
+
+.ok {
+  background: var(--accent);
+  font-size: 13px;
+  padding: 0 12px;
+}
+
+.nope {
+  background: #c0392b;
+  font-size: 15px;
+  padding: 0 10px;
+}
+
+#archive .item, #bin .item { margin: 0; }
+#archive .card, #bin .card { background: none; border: 0; border-radius: 0; }
+#archive .face, #bin .face { padding: 7px 12px; }
+#archive .txt, #bin .txt { color: var(--muted); font-size: 15px; }
+/* Тут строка короче: шрифт 15px × 1.45. Переопределяем — и выравнивание
+   по первой строке пересчитывается само, формулы менять не нужно. */
+#archive .item, #bin .item { --rowh: 21.75px; }
+#archive .when, #bin .when {
+  flex: 0 0 auto;
+  height: var(--rowh);
+  display: flex;
+  align-items: center;
+  color: #bdb5ab;
+  font-size: 12px;
+}
+
+/* Корзина: значок в правом углу той же строки, где заголовок архива. */
+#arcHead { display: flex; align-items: center; gap: 10px; }
+/* Тире и число — отдельные ячейки того же ряда, поэтому расстояние
+   между «Архив», тире и числом задаёт один и тот же gap. Обычный пробел
+   внутри строки дал бы другую, шрифтовую ширину. */
+#arcCnt { display: flex; align-items: center; gap: 10px; }
+
+.binbtn {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  padding: 2px 0 2px 12px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: .02em;
+  cursor: pointer;
+}
+.binbtn svg { width: 17px; height: 17px; display: block; }
+.binbtn:active { transform: scale(.92); }
+.binbtn.on { color: #b03030; }
+
+/* Кнопка возврата дела из корзины. */
+.undo {
+  flex: 0 0 auto;
+  height: var(--rowh);
+  display: flex;
+  align-items: center;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 2px 0 8px;
+  cursor: pointer;
+}
+
+/* --- движение ---------------------------------------------------- */
+
+/* Новая карточка не возникает, а проявляется сверху вниз. Класс вешается
+   ровно на одну строку — ту, которая только что появилась. */
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(-8px) scale(.985); }
+  to   { opacity: 1; transform: none; }
+}
+.item.in { animation: riseIn .26s cubic-bezier(.2,.8,.2,1); }
+
+/* Свой раздел проявляется в момент создания. Класс висит меньше
+   секунды и снимается: держать анимацию в постоянном правиле нельзя —
+   разметка разделов пересобирается, и она играла бы каждый раз. */
+section[data-sec].born { animation: riseIn .42s cubic-bezier(.2,.8,.2,1); }
+
+/* Раздел, уехавший в корзину. Отличается от дела намеренно резко:
+   зелёная грань по левому краю, значок стопки, имя жирным и подпись
+   со счётом дел внутри. Дело — строка текста, раздел — карточка. */
+#bin .item.sec .card {
+  border-left: 3px solid var(--accent);
+  background: #fbfaf7;
+}
+#bin .item.sec .txt { color: var(--fg); }
+/* Всё в одну строку: имя, точка, счёт. Имя жирным — по нему и читается,
+   что это раздел, а не дело. */
+#bin .item.sec .txt b { font-weight: 600; font-size: 15px; }
+#bin .item.sec .sub { color: var(--muted); letter-spacing: .02em; }
+.secicon {
+  flex: 0 0 auto;
+  height: var(--rowh);
+  display: flex;
+  align-items: center;
+  color: var(--accent);
+}
+.secicon svg { width: 16px; height: 16px; display: block; }
+
+/* --- вопрос перед удалением раздела --- */
+
+#ask {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Отступы у окна скромные: ширины должно хватить, чтобы «Да, удалить»
+     со счётчиком уместилось в одну строку даже на узком телефоне. */
+  padding: 12px;
+  background: rgba(20, 17, 15, .34);
+  opacity: 0;
+  transition: opacity .18s ease;
+}
+#ask.shown { opacity: 1; }
+
+/* Имя askbox, а не box: .box в этом файле уже занят — это квадратик
+   чекбокса у дела, 21×21. Окно наследовало от него высоту и схлопывалось
+   в полоску, а текст и кнопки вываливались наружу. */
+#ask .askbox {
+  width: 100%;
+  max-width: 340px;
+  padding: 16px 16px 14px;
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .26);
+  animation: riseIn .24s cubic-bezier(.2,.8,.2,1);
+}
+#ask b { display: block; font-size: 16px; font-weight: 600; margin-bottom: 7px; }
+#ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.45; color: var(--muted); }
+#ask .acts { display: flex; gap: 6px; }
+
+#ask .acts button {
+  /* auto, а не 0: при равной ширине «Да, удалить» со счётчиком не
+     помещалось в строку и переносилось. Теперь кнопка берёт столько,
+     сколько нужно её надписи, а остаток делится поровну. nowrap —
+     страховка: перенос запрещён совсем. */
+  flex: 1 1 auto;
+  white-space: nowrap;
+  padding: 11px 6px;
+  border: 0;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13.5px;
+  color: #fff;
+  cursor: pointer;
+}
+
+/* Пока идёт отсчёт — кнопка тусклая и не нажимается. Загорается сама. */
+#ask .yes { background: #b23b2e; opacity: .4; transition: opacity .45s ease; }
+#ask .yes:not([disabled]) { opacity: 1; }
+#ask .yes[disabled] { cursor: default; }
+#ask .no { background: var(--accent); }
+#ask .acts button:not([disabled]):active { transform: scale(.97); }
+
+/* Счётчик и его пустой близнец справа одинаковой ширины: надпись
+   стоит ровно посередине кнопки, и цифра, пропадая, ничего не сдвигает. */
+#ask .yes { display: flex; align-items: center; justify-content: center; gap: 5px; }
+#ask .cd { flex: 0 0 auto; min-width: 1.45em; text-align: center; }
+
+/* Нажатия. Кнопка, которая не отвечает на палец, и делает интерфейс
+   «деревянным» — отклик важнее самой анимации. */
+.ok, .nope, .undo, .kill, .binbtn, .trash, .okmini, .nomini, .pen, .info { transition: transform .1s ease, opacity .1s ease; }
+.ok:active, .nope:active, .undo:active, .kill:active { transform: scale(.94); }
+.trash:active { opacity: .82; }
+
+/* Сворачивающиеся полки считают высоту в JS — здесь только сглаживание. */
+#archive, #bin { transition: height .24s cubic-bezier(.2,.8,.2,1); }
+
+/* Кому анимации мешают (настройка телефона) — тем ничего не двигается. */
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+@media (min-width: 720px) {
+  body { max-width: 760px; margin: 0 auto; }
+  /* Меню — position:fixed, а такой элемент считает координаты от окна,
+     а не от страницы, и про её max-width ничего не знает. На широком
+     экране лист расползался во всю ширину окна. Возвращаем его в колонку
+     приложения: 50% минус половина колонки (380) плюс её отступ (10). */
+  #menu .sheet {
+    left: calc(50% - 370px);
+    right: auto;
+    width: 400px;
+  }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <button id="burger" aria-label="меню">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+  </button>
+  <h1>Дела</h1>
+  <span id="state">…</span>
+</header>
+
+<section data-sec="deadline">
+  <h2 class="main"><span class="tt" id="t-deadline"></span>
+    <span class="tools">
+      <button class="del" data-del="deadline" aria-label="удалить раздел"></button>
+      <button class="pen" data-ren="deadline" aria-label="переименовать раздел"></button>
+      <button class="plus" data-add="deadline" aria-label="добавить дело">+</button>
+    </span></h2>
+  <div class="list" id="deadline"></div>
+</section>
+
+<section data-sec="free">
+  <h2 class="main"><span class="tt" id="t-free"></span>
+    <span class="tools">
+      <button class="del" data-del="free" aria-label="удалить раздел"></button>
+      <button class="pen" data-ren="free" aria-label="переименовать раздел"></button>
+      <button class="plus" data-add="free" aria-label="добавить дело">+</button>
+    </span></h2>
+  <div class="list" id="free"></div>
+</section>
+
+<section data-sec="ideas">
+  <h2 class="main"><span class="tt" id="t-ideas"></span>
+    <span class="tools">
+      <button class="del" data-del="ideas" aria-label="удалить раздел"></button>
+      <button class="pen" data-ren="ideas" aria-label="переименовать раздел"></button>
+      <button class="plus" data-add="ideas" aria-label="добавить дело">+</button>
+    </span></h2>
+  <div class="list" id="ideas"></div>
+</section>
+
+<section id="doneSec">
+  <h2><span class="grp"><span class="tt">Сделано за сегодня — <span id="cnt">0</span></span>
+    <button class="info" data-tip="done" aria-label="как работает раздел">i</button></span></h2>
+  <div class="list" id="done"></div>
+</section>
+
+<section>
+  <h2 id="footHead">
+    <!-- Два независимых блока в одной строке: подсвечивается только тот,
+         про который спросили. -->
+    <span class="grp">
+      <span id="arcHead"><span class="caret">›</span> Архив <span id="arcCnt"></span></span>
+      <button class="info" data-tip="archive" aria-label="как работает архив">i</button>
+    </span>
+    <span class="grp tools">
+      <button class="binbtn" id="binBtn" aria-label="корзина"><span id="binIcon"></span><span id="binCnt"></span></button>
+      <button class="info" data-tip="bin" aria-label="как работает корзина">i</button>
+    </span>
+  </h2>
+  <div class="list" id="bin" hidden></div>
+  <div class="list" id="archive" hidden></div>
+</section>
+
+<!-- Поясняющее облачко. Одно на всю страницу, текст подставляется. -->
+<div id="tip" hidden>
+  <div class="bubble"><b></b><p></p></div>
+</div>
+
+<script>
+(function () {
+  /* Разделы. Три встроенных плюс свои, заведённые из меню; порядок
+     своих задаёт doc.extra, и он же — порядок на экране.
+     LISTS и ALL поэтому не константы: после каждой замены документа их
+     пересобирает relist(). Все перечисления разделов ходят через них —
+     отрисовка, перетаскивание, подсчёт изменений, — так что новый
+     раздел работает наравне со встроенными сам собой. */
+  var BASE_LISTS = ['deadline', 'free', 'ideas'];
+  var TAIL = ['done', 'archive', 'bin'];
+  var EXTRA_RE = /^x[0-9a-f]{8}$/;   // та же форма, что проверяет сервер
+  var MAX_EXTRA = 20;
+  var LISTS = BASE_LISTS.slice();   // разделы, которые видно и куда можно класть
+  var ALL = LISTS.concat(TAIL);     // всё, что рисуется на странице
+  // Всё, что ХРАНИТСЯ. Отличается от ALL убранными встроенными разделами:
+  // их поля из документа не исчезают, и в диффе их надо считать наравне
+  // с остальными — иначе сервер оставит у себя дела, которые здесь уже
+  // уехали в корзину, и вернёт их следующим ответом.
+  var STORED = BASE_LISTS.concat(TAIL);
+  var DAY = 24 * 60 * 60 * 1000;
+  var WEEK = 7 * DAY;
+  var YEAR = 365 * DAY;
+  var KEY = 'todo.key', CACHE = 'todo.cache';
+
+  /* --- ключ доступа: один раз из адреса, дальше из памяти браузера --- */
+  var m = location.hash.match(/k=([a-f0-9]{64})/i);
+  if (m) {
+    localStorage.setItem(KEY, m[1]);
+    history.replaceState(null, '', location.pathname);
+  }
+  var key = localStorage.getItem(KEY);
+
+  var doc = { updated: '', deadline: [], free: [], ideas: [], done: [], archive: [], bin: [] };
+  // Идёт показ приёмов. Тогда поле ввода не забирает фокус: иначе
+  // на телефоне вылезает клавиатура и закрывает половину экрана.
+  var demo = false;
+  var state = document.getElementById('state');
+  var dirty = false, sending = false, timer = null;
+  // synced — снимок того, что сейчас лежит на сервере. По разнице с ним
+  // считаются изменения, и на сервер уезжают только они.
+  var synced = null;
+  // Версия протокола сервера. 0 — старый, понимает только документ
+  // целиком. Пока не убедились в обратном, шлём по-старому: иначе
+  // в момент обновления сервера изменения ушли бы в пустоту.
+  var proto = 0;
+  // Счётчик правок: если пока шёл запрос успели поправить ещё раз,
+  // ответ не должен погасить флаг «есть несохранённое».
+  var rev = 0, sentRev = 0;
+
+  function say(text, bad) {
+    state.textContent = text;
+    state.className = bad ? 'err' : '';
+  }
+
+  function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+
+  /* Пересобрать набор разделов по документу. Зовётся всюду, где doc
+     заменяется целиком: из памяти браузера, из ответа сервера, после
+     разрешения конфликта. Заодно чинит документ, пришедший кривым:
+     раздел не той формы выбрасывается, пропавший список заводится
+     пустым — иначе draw() споткнётся на первом же переборе. */
+  function relist() {
+    var own = [];
+    (doc.extra || []).forEach(function (name) {
+      if (EXTRA_RE.test(name) && own.indexOf(name) < 0) { own.push(name); }
+    });
+    own = own.slice(0, MAX_EXTRA);
+    if (own.length) { doc.extra = own; } else { delete doc.extra; }
+
+    // Убранные встроенные разделы. Ключ у встроенного не удалить —
+    // на нём держится форма документа, — поэтому он просто помечен.
+    var gone = [];
+    (doc.off || []).forEach(function (name) {
+      if (BASE_LISTS.indexOf(name) >= 0 && gone.indexOf(name) < 0) { gone.push(name); }
+    });
+    // Совсем без разделов остаться нельзя: класть дела будет некуда.
+    if (gone.length >= BASE_LISTS.length && !own.length) { gone = gone.slice(0, -1); }
+    if (gone.length) { doc.off = gone; } else { delete doc.off; }
+
+    var live = BASE_LISTS.filter(function (n) { return gone.indexOf(n) < 0; }).concat(own);
+
+    /* Порядок разделов на экране. Он живёт отдельно от набора: раздел
+       может быть заведён, но ещё не переставлен, и наоборот — порядок
+       может помнить раздел, который уже удалили. Поэтому берём из
+       порядка только живое, а всё живое, чего в нём нет (только что
+       заведённые разделы), дописываем в конец. */
+    var seq = [];
+    (doc.order || []).forEach(function (n) {
+      if (live.indexOf(n) >= 0 && seq.indexOf(n) < 0) { seq.push(n); }
+    });
+    live.forEach(function (n) { if (seq.indexOf(n) < 0) { seq.push(n); } });
+    // Поля не было — не заводим: пока разделы не переставляли, порядок
+    // и так естественный, а лишнее поле гоняло бы дифф на пустом месте.
+    if (doc.order) { doc.order = seq; }
+
+    LISTS = seq;
+    ALL = LISTS.concat(TAIL);
+    STORED = BASE_LISTS.concat(own).concat(TAIL);
+    STORED.forEach(function (name) { doc[name] = doc[name] || []; });
+  }
+
+  /* Открытое поле ввода. Пока оно на экране, перерисовывать список нельзя:
+     draw() сносит разметку вместе с полем — клавиатура падает, а набранный
+     текст пропадает, потому что дело в памяти ещё старое. Именно на этом
+     правка и сбрасывалась через пару секунд, когда прилетал плановый опрос
+     сервера. */
+  function busy() {
+    return !!document.querySelector('.item textarea, .tt input');
+  }
+
+  /* --- названия разделов ---
+     Заголовки хозяин списка меняет сам, поэтому они не в разметке, а в
+     документе: doc.names. Ключа нет — берём имя по умолчанию.
+     Сервер хранит документ целиком, отдельного поля заводить не надо. */
+
+  var TITLES = {
+    deadline: 'С дедлайном',
+    free: 'В свободное время',
+    ideas: 'На подумать'
+  };
+
+  var NEW_TITLE = 'Новый раздел';
+
+  function title(key) {
+    // У своего раздела имени по умолчанию нет — он и рождается с этим.
+    return (doc.names && doc.names[key]) || TITLES[key] || NEW_TITLE;
+  }
+
+  function renderTitles() {
+    if (document.querySelector('.tt input')) { return; }   // идёт правка
+    LISTS.forEach(function (key) {
+      var host = document.getElementById('t-' + key);
+      if (host) { host.textContent = title(key); }
+    });
+  }
+
+  /* Разметка своих разделов. Встроенные лежат в странице, эти собираем
+     сами — по одной секции на ключ, в порядке doc.extra, в самом низу
+     страницы. Пересобираем только когда набор разделов правда сменился:
+     иначе разметка обновлялась бы на каждую отрисовку. */
+  var mounted = '';
+
+  function mountSections() {
+    var own = doc.extra || [];
+    var gone = doc.off || [];
+    // В отпечаток входит и порядок: переставили разделы — разметку надо
+    // пересобрать, хотя набор остался прежним.
+    var want = own.join('|') + '#' + gone.join('|') + '#' + LISTS.join('|');
+    if (want === mounted) { return; }
+    mounted = want;
+
+    // Убранный встроенный раздел прячем и чистим: разметка его дел
+    // осталась бы на странице невидимой, а по ней ищут строки.
+    BASE_LISTS.forEach(function (key) {
+      var s = document.querySelector('section[data-sec="' + key + '"]');
+      if (!s) { return; }
+      var off = gone.indexOf(key) >= 0;
+      s.hidden = off;
+      if (off) { document.getElementById(key).innerHTML = ''; }
+    });
+
+    // Свои разделы — единым блоком следом за встроенными и перед
+    // «Сделано за сегодня»: все рабочие разделы идут подряд.
+    [].forEach.call(document.querySelectorAll('section[data-sec^="x"]'),
+      function (s) { s.remove(); });
+    var anchor = document.getElementById('doneSec');
+    own.forEach(function (key) {
+      // key прошёл EXTRA_RE — это восемь шестнадцатеричных цифр,
+      // в разметку такое подставлять безопасно.
+      var s = document.createElement('section');
+      s.dataset.sec = key;
+      s.innerHTML =
+        '<h2 class="main"><span class="tt" id="t-' + key + '"></span>' +
+        '<span class="tools">' +
+        '<button class="del" data-del="' + key + '" aria-label="удалить раздел"></button>' +
+        '<button class="pen" data-ren="' + key + '" aria-label="переименовать раздел"></button>' +
+        '<button class="plus" data-add="' + key + '" aria-label="добавить дело">+</button>' +
+        '</span></h2><div class="list" id="' + key + '"></div>';
+      document.body.insertBefore(s, anchor);
+    });
+
+    /* Расстановка. insertBefore не копирует, а переносит узел, поэтому
+       достаточно пройти по порядку и каждый раздел подряд поставить
+       перед «Сделано за сегодня» — они выстроятся как надо. Встроенные
+       двигаются наравне со своими: человек волен поставить свой раздел
+       первым. */
+    LISTS.forEach(function (key) {
+      var s = document.querySelector('section[data-sec="' + key + '"]');
+      if (s) { document.body.insertBefore(s, anchor); }
+    });
+
+    // Значки рисуются кодом, а не лежат в разметке. Раньше их
+    // расставляли один раз при загрузке — у разделов, созданных потом,
+    // карандаш оставался пустым квадратом.
+    paintIcons();
+
+    // Последний раздел удалять не даём: дела станет некуда класть,
+    // да и возвращать из корзины будет некуда.
+    var only = LISTS.length <= 1;
+    [].forEach.call(document.querySelectorAll('.del'), function (b) {
+      b.hidden = only;
+    });
+  }
+
+  /* Значки карандаша и корзины в заголовках разделов. */
+  function paintIcons() {
+    [].forEach.call(document.querySelectorAll('.pen'), function (b) {
+      if (!b.firstChild) { b.innerHTML = PEN_SVG; }
+    });
+    [].forEach.call(document.querySelectorAll('.del'), function (b) {
+      if (!b.firstChild) { b.innerHTML = TRASH_SVG; }
+    });
+  }
+
+  /* Завести раздел. Ключ случайный: имя человек меняет карандашом,
+     а ключ остаётся навсегда — по нему дела и находят свой раздел. */
+  function newSectionKey() {
+    var out;
+    do {
+      out = 'x';
+      for (var i = 0; i < 8; i++) {
+        out += '0123456789abcdef'[Math.floor(Math.random() * 16)];
+      }
+    } while (doc[out]);
+    return out;
+  }
+
+  function addSection() {
+    var own = (doc.extra || []).slice();
+    if (own.length >= MAX_EXTRA) {
+      say('больше ' + MAX_EXTRA + ' разделов не завести', true);
+      return;
+    }
+    var key = newSectionKey();
+    own.push(key);
+    doc.extra = own;
+    doc[key] = [];
+    relist();
+    queue();
+    draw();
+    var host = document.querySelector('section[data-sec="' + key + '"]');
+    if (!host) { return; }
+    // Появление показываем классом, а не постоянным правилом: разметка
+    // пересобирается, и правило играло бы анимацию на каждой сборке.
+    host.classList.add('born');
+    setTimeout(function () { host.classList.remove('born'); }, 700);
+    try { host.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    catch (e) { host.scrollIntoView(); }
+  }
+
+  /* --- удаление раздела ---
+     Дела не пропадают: они уезжают в корзину тем же путём, что и
+     удалённые поодиночке, и неделю их можно вернуть. Свой раздел
+     исчезает совсем, встроенный помечается убранным — его ключ
+     из документа не выкинуть, на нём держится форма. */
+
+  function dropSection(key) {
+    // Пока висел вопрос, раздел могли убрать с другого устройства.
+    if (LISTS.indexOf(key) < 0) { return; }
+    var when = Date.now();
+    var rows = (doc[key] || []).map(function (task) {
+      var copy = {};
+      for (var f in task) { if (f !== 'draft') { copy[f] = task[f]; } }
+      return copy;
+    });
+    // Раздел уезжает в корзину целиком, одной записью: с названием и
+    // делами внутри. Так его и видно как раздел, и вернуть можно тем же
+    // движением — со всем содержимым разом.
+    doc.bin.unshift({
+      id: uid(), sec: key, text: title(key), delAt: when, rows: rows
+    });
+    doc[key] = [];
+    if (doc.names) { delete doc.names[key]; }
+    if (EXTRA_RE.test(key)) {
+      doc.extra = (doc.extra || []).filter(function (n) { return n !== key; });
+      delete doc[key];
+    } else {
+      doc.off = (doc.off || []).concat([key]);
+    }
+    relist();
+    purge();        // корзина заново сортируется по времени удаления
+    queue();
+    draw();
+  }
+
+  var ask = null;
+
+  function shutAsk() {
+    if (!ask) { return; }
+    var box = ask;
+    ask = null;
+    clearInterval(box.timer);
+    box.el.classList.remove('shown');
+    setTimeout(function () { box.el.remove(); }, 200);
+  }
+
+  function askDelete(key) {
+    if (ask || LISTS.indexOf(key) < 0 || LISTS.length <= 1) { return; }
+    var count = (doc[key] || []).length;
+
+    var el = document.createElement('div');
+    el.id = 'ask';
+    var box = document.createElement('div');
+    box.className = 'askbox';
+    el.appendChild(box);
+
+    var head = document.createElement('b');
+    head.textContent = 'Удалить раздел «' + title(key) + '»?';
+    box.appendChild(head);
+
+    var note = document.createElement('p');
+    note.textContent = count
+      ? ('Раздел уедет в корзину вместе с делами (' + count + '). ' +
+         'Вернуть целиком можно 7 дней.')
+      : 'Раздел пуст. Он уедет в корзину — вернуть можно 7 дней.';
+    box.appendChild(note);
+
+    var acts = document.createElement('div');
+    acts.className = 'acts';
+    box.appendChild(acts);
+
+    var yes = document.createElement('button');
+    yes.className = 'yes';
+    yes.disabled = true;
+    var cd = document.createElement('span');
+    cd.className = 'cd';
+    cd.textContent = '(5)';
+    var lbl = document.createElement('span');
+    lbl.textContent = 'Да, удалить';
+    // Пустой близнец счётчика справа. Он держит надпись ровно по центру
+    // кнопки — и пока цифра идёт, и когда она пропадает.
+    var pad = document.createElement('span');
+    pad.className = 'cd';
+    pad.setAttribute('aria-hidden', 'true');
+    yes.appendChild(cd);
+    yes.appendChild(lbl);
+    yes.appendChild(pad);
+    yes.onclick = function () {
+      if (yes.disabled) { return; }
+      shutAsk();
+      dropSection(key);
+    };
+    acts.appendChild(yes);
+
+    var no = document.createElement('button');
+    no.className = 'no';
+    no.textContent = 'Нет, оставить';
+    no.onclick = shutAsk;
+    acts.appendChild(no);
+
+    el.onclick = function (e) { if (e.target === el) { shutAsk(); } };
+    document.body.appendChild(el);
+    requestAnimationFrame(function () { el.classList.add('shown'); });
+
+    // Пять секунд на подумать. Цифра уходит, но место под неё остаётся
+    // занятым — иначе на последнем шаге надпись прыгнула бы влево.
+    var left = 5;
+    var timer = setInterval(function () {
+      left--;
+      if (left > 0) { cd.textContent = '(' + left + ')'; return; }
+      clearInterval(timer);
+      cd.style.visibility = 'hidden';
+      yes.disabled = false;
+    }, 1000);
+
+    ask = { el: el, timer: timer };
+  }
+
+  function rename(key) {
+    var host = document.getElementById('t-' + key);
+    if (host.querySelector('input')) { return; }
+    var was = title(key);
+    var pen = document.querySelector('.pen[data-ren="' + key + '"]');
+
+    var inp = document.createElement('input');
+    inp.value = was;
+    inp.maxLength = 40;
+    host.textContent = '';
+    host.appendChild(inp);
+    if (!demo) { inp.focus(); }
+    // Весь текст выделен сразу: чаще название заменяют целиком, а не
+    // дописывают. select() на Android иногда молчит — дублируем явно.
+    inp.select();
+    try { inp.setSelectionRange(0, inp.value.length); } catch (e) { /* не поле — не беда */ }
+
+    /* Кнопки правки встают НА МЕСТО корзины и карандаша, а не рядом
+       с ними: корзина прячется под красную «отмену», карандаш — под
+       зелёное «ок». Ряд как был из трёх кнопок, так и остаётся, ширина
+       не меняется, и ничего не разъезжается. Порядок ролей тот же, что
+       у черновика дела: слева «×», справа «ок». */
+    var del = pen.parentNode.querySelector('.del');
+    if (del) { del.hidden = true; }
+    pen.hidden = true;
+
+    var no = document.createElement('button');
+    no.className = 'okmini nomini';
+    no.textContent = '×';
+    no.setAttribute('aria-label', 'отменить переименование');
+    no.onpointerdown = function (e) { e.preventDefault(); afterButton(); finish(null); };
+    pen.parentNode.insertBefore(no, del || pen);
+
+    var ok = document.createElement('button');
+    ok.className = 'okmini';
+    ok.textContent = 'ок';
+    ok.setAttribute('aria-label', 'сохранить название');
+    // pointerdown + preventDefault: поле не теряет фокус, blur не мешает.
+    // afterButton — чтобы догоняющий клик не попал в карандаш на месте,
+    // которое освободится после исчезновения кнопки.
+    ok.onpointerdown = function (e) { e.preventDefault(); afterButton(); finish(inp.value); };
+    pen.parentNode.insertBefore(ok, pen);
+
+    var closed = false;
+
+    // v === null — уходим, ничего не меняя.
+    function finish(v) {
+      if (closed) { return; }
+      closed = true;
+      if (v !== null) {
+        v = v.trim();
+        doc.names = doc.names || {};
+        // Вернул имя по умолчанию — не храним, пусть остаётся пусто.
+        if (v && v !== TITLES[key]) { doc.names[key] = v; }
+        else { delete doc.names[key]; }
+      }
+      no.remove();
+      ok.remove();
+      if (del) { del.hidden = false; }
+      pen.hidden = false;
+      // Поле убираем ЗДЕСЬ. Раньше полагались на renderTitles, а он
+      // отказывался работать, пока на странице есть открытый ввод —
+      // и заголовок так и оставался полем до перезагрузки.
+      host.textContent = title(key);
+      if (v !== null && v !== was) { queue(); }
+      renderTitles();
+    }
+
+    // Ушёл фокус — считаем это согласием: набранное сохраняется.
+    inp.onblur = function () { finish(inp.value); };
+    inp.onkeydown = function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); finish(inp.value); }
+      if (e.key === 'Escape') { e.preventDefault(); finish(null); }
+    };
+  }
+
+  /* --- меню в шапке ---------------------------------------------------
+     Пока в нём один пункт, но задуман он как ящик для всего, что не
+     помещается в список: перенос, выгрузка, настройки. */
+
+  var PLAY_SVG =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+    ' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' +
+    '<circle cx="12" cy="12" r="9.2"/>' +
+    '<path d="M10 8.6l6 3.4-6 3.4z"/>' +
+    '</svg>';
+
+  // Стопка листов — метка раздела в корзине. Один лист приподнят,
+  // поэтому читается как «несколько», а не как одна бумажка.
+  var STACK_SVG =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+    ' stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"' +
+    ' aria-hidden="true">' +
+    '<rect x="7.5" y="3.5" width="13" height="13" rx="2"/>' +
+    '<path d="M16.5 20.5h-9a4 4 0 0 1-4-4v-9"/>' +
+    '</svg>';
+
+  // 1 дело, 2 дела, 5 дел. Правило русского счёта: смотрим на последние
+  // две цифры, потому что 11–14 ведут себя не как 1–4.
+  function cases(n) {
+    var two = n % 100, one = n % 10;
+    if (two > 10 && two < 20) { return 'дел'; }
+    if (one === 1) { return 'дело'; }
+    if (one > 1 && one < 5) { return 'дела'; }
+    return 'дел';
+  }
+
+  var ADD_SVG =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+    ' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M4 6.5h13M4 11h8M4 15.5h5"/>' +
+    '<path d="M16.5 13v7M13 16.5h7"/>' +
+    '</svg>';
+
+  // Две строки со стрелками вверх-вниз — «переставить».
+  var MOVE_SVG =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+    ' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M8 3.5v17M4.8 6.7L8 3.5l3.2 3.2"/>' +
+    '<path d="M16 20.5v-17M12.8 17.3l3.2 3.2 3.2-3.2"/>' +
+    '</svg>';
+
+  var DEVICE_SVG =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+    ' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' +
+    '<rect x="2.5" y="4" width="13" height="10" rx="1.6"/>' +
+    '<path d="M6 18h6"/>' +
+    '<rect x="16.5" y="9" width="5" height="11" rx="1.4"/>' +
+    '</svg>';
+
+  // Ключ живёт в адресе после решётки. Всё, что справа от неё, браузер
+  // на сервер не отправляет и в логи он не попадает.
+  function shareLink() {
+    return location.origin + location.pathname + '#k=' + key;
+  }
+
+  function copy(text, btn) {
+    var was = btn.textContent;
+    function done(ok) {
+      btn.textContent = ok ? 'скопировано' : 'не вышло';
+      setTimeout(function () { btn.textContent = was; }, 1600);
+    }
+    function old() {
+      // Запасной путь для браузеров без буфера обмена: временное поле,
+      // выделение, копирование, уборка.
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;top:0;opacity:0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      ta.remove();
+      done(ok);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, old);
+    } else { old(); }
+  }
+
+  /* Список разделов, который можно перетасовать. Своего перетаскивания
+     здесь ровно столько, сколько нужно: строк мало, все на виду, поэтому
+     двигаем саму строку, без копии-призрака и без FLIP. Правило простое:
+     заехал выше середины соседа сверху — меняемся с ним местами. */
+  function sortable(list) {
+    var held = null;
+
+    /* Слушаем документ, а не список. Захват указателя (setPointerCapture)
+       здесь не работает: строку мы двигаем через insertBefore, а это для
+       браузера удаление узла — захват слетает. Дальше палец, отпущенный
+       за пределами списка, уносил pointerup мимо, строка оставалась
+       поднятой с тенью. На документе такого промаха быть не может. */
+    function move(e) {
+      if (!held) { return; }
+      var rows = [].slice.call(list.querySelectorAll('.mrow'));
+      var at = rows.indexOf(held);
+      var prev = rows[at - 1], next = rows[at + 1], b;
+      if (prev) {
+        b = prev.getBoundingClientRect();
+        if (e.clientY < b.top + b.height / 2) {
+          return list.insertBefore(held, prev);
+        }
+      }
+      if (next) {
+        b = next.getBoundingClientRect();
+        if (e.clientY > b.top + b.height / 2) {
+          list.insertBefore(next, held);
+        }
+      }
+    }
+
+    function drop() {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', drop);
+      document.removeEventListener('pointercancel', drop);
+      if (!held) { return; }
+      held.classList.remove('lift');
+      held = null;
+    }
+
+    list.addEventListener('pointerdown', function (e) {
+      var g = e.target.closest && e.target.closest('.mgrip');
+      if (!g) { return; }
+      e.preventDefault();
+      drop();                 // на случай брошенного перетаскивания
+      held = g.closest('.mrow');
+      held.classList.add('lift');
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', drop);
+      document.addEventListener('pointercancel', drop);
+    });
+  }
+
+  /* Панель перестановки: строки разделов, под ними «×» и «ок».
+     До «ок» документ не трогаем — переставляется только разметка. */
+  function fillMover(inner, body) {
+    inner.textContent = '';
+
+    var list = document.createElement('div');
+    list.className = 'mover';
+    LISTS.forEach(function (key) {
+      var r = document.createElement('div');
+      r.className = 'mrow';
+      r.dataset.key = key;
+      var g = document.createElement('span');
+      g.className = 'mgrip';
+      g.textContent = '⠿';
+      r.appendChild(g);
+      var t = document.createElement('span');
+      t.className = 'mname';
+      t.textContent = title(key);
+      r.appendChild(t);
+      list.appendChild(r);
+    });
+    inner.appendChild(list);
+    sortable(list);
+
+    var acts = document.createElement('div');
+    acts.className = 'macts';
+    inner.appendChild(acts);
+
+    var no = document.createElement('button');
+    no.className = 'mno';
+    no.textContent = '×';
+    no.setAttribute('aria-label', 'отменить перестановку');
+    no.onclick = function () { fold(body, false); };
+    acts.appendChild(no);
+
+    var ok = document.createElement('button');
+    ok.textContent = 'ок';
+    ok.setAttribute('aria-label', 'сохранить порядок');
+    ok.onclick = function () {
+      var seq = [].map.call(list.querySelectorAll('.mrow'),
+        function (r) { return r.dataset.key; });
+      if (seq.join('|') !== LISTS.join('|')) {
+        doc.order = seq;
+        relist();
+        queue();
+        draw();
+      }
+      shutMenu();
+    };
+    acts.appendChild(ok);
+  }
+
+  var menu = null;
+
+  function shutMenu() {
+    if (!menu) { return; }
+    var m = menu;
+    menu = null;
+    m.className = 'out';
+    setTimeout(function () { m.remove(); }, 160);
+  }
+
+  function openMenu() {
+    if (menu) { return shutMenu(); }
+    menu = document.createElement('div');
+    menu.id = 'menu';
+
+    var sheet = document.createElement('div');
+    sheet.className = 'sheet';
+    menu.appendChild(sheet);
+
+    /* Свой раздел заводится только там, где сервер про них знает.
+       Страница обновляется на диске сразу, а сервис перезапускают
+       руками — в этот промежуток пункта просто нет, и раздел не
+       уедет в сервер, который его выбросит. */
+    if (proto >= 3) {
+      var addRow = document.createElement('button');
+      addRow.className = 'row';
+      addRow.innerHTML = ADD_SVG + '<span>Добавить новый раздел</span>';
+      addRow.onclick = function () {
+        shutMenu();
+        setTimeout(addSection, 220);   // ждём, пока подложка догаснет
+      };
+      sheet.appendChild(addRow);
+    }
+
+    // Перестановка разделов: список с полосками для перетаскивания,
+    // ниже «ок» и «×». Пока разделов меньше двух, переставлять нечего.
+    if (proto >= 4 && LISTS.length > 1) {
+      var moveRow = document.createElement('button');
+      moveRow.className = 'row';
+      moveRow.innerHTML = MOVE_SVG + '<span>Переместить разделы</span>';
+      sheet.appendChild(moveRow);
+
+      var moveBody = document.createElement('div');
+      moveBody.className = 'body';
+      moveBody.hidden = true;
+      var moveInner = document.createElement('div');
+      moveInner.className = 'inner';
+      moveBody.appendChild(moveInner);
+      sheet.appendChild(moveBody);
+
+      moveRow.onclick = function () {
+        if (moveBody.hidden) { fillMover(moveInner, moveBody); }
+        fold(moveBody, moveBody.hidden);
+      };
+    }
+
+    var row = document.createElement('button');
+    row.className = 'row';
+    row.innerHTML = DEVICE_SVG + '<span>Перенести на другое устройство</span>';
+    sheet.appendChild(row);
+
+    var body = document.createElement('div');
+    body.className = 'body';
+    body.hidden = true;
+    var inner = document.createElement('div');
+    inner.className = 'inner';
+    body.appendChild(inner);
+    sheet.appendChild(body);
+
+    if (!key) {
+      inner.innerHTML = '<p>Ключ не найден: приложение открыто без него. ' +
+        'Перенести список не с чего.</p>';
+    } else {
+      var link = shareLink();
+      inner.innerHTML =
+        '<p>Откройте эту ссылку на другом устройстве — список появится ' +
+        'там же и будет общим.</p>' +
+        '<p class="warn">Ссылка открывает полный доступ: кто её получил, ' +
+        'тот видит и правит все ваши дела.</p>';
+
+      var box = document.createElement('div');
+      box.className = 'link';
+      box.textContent = link;
+      inner.appendChild(box);
+
+      var acts = document.createElement('div');
+      acts.className = 'acts';
+      inner.appendChild(acts);
+
+      var cp = document.createElement('button');
+      cp.textContent = 'Копировать';
+      cp.onclick = function () { copy(link, cp); };
+      acts.appendChild(cp);
+
+      // Системное «Поделиться» есть не везде: на настольных браузерах
+      // его обычно нет, и кнопка была бы обманом.
+      if (navigator.share) {
+        var sh = document.createElement('button');
+        sh.className = 'plain';
+        sh.textContent = 'Поделиться';
+        sh.onclick = function () {
+          navigator.share({ title: 'Мои дела', url: link })
+            .catch(function () { /* закрыл окно — это не ошибка */ });
+        };
+        acts.appendChild(sh);
+      }
+    }
+
+    row.onclick = function () { fold(body, body.hidden); };
+
+    // Показ приёмов. Пункт без раскрывающейся части: нажал — меню
+    // ушло, показ пошёл. Ждём, пока подложка догаснет, иначе первый
+    // круг рисуется поверх уходящего меню.
+    // Показ идёт по разделу «С дедлайном». Убрали его — показывать не на
+    // чем, и пункт незачем.
+    if (LISTS.indexOf('deadline') >= 0) {
+      var demoRow = document.createElement('button');
+      demoRow.className = 'row';
+      demoRow.innerHTML = PLAY_SVG + '<span>Демонстрация</span>';
+      demoRow.onclick = function () {
+        shutMenu();
+        setTimeout(function () { tour(true); }, 260);
+      };
+      sheet.appendChild(demoRow);
+    }
+
+    menu.onclick = function (e) { if (e.target === menu) { shutMenu(); } };
+    document.body.appendChild(menu);
+  }
+
+  document.getElementById('burger').onclick = openMenu;
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && ask) { return shutAsk(); }
+    if (e.key === 'Escape' && menu) { shutMenu(); }
+  });
+
+  /* --- поясняющие облачка --- */
+
+  var TIPS = {
+    done: ['Сделано за сегодня',
+      'Сюда попадают все завершённые дела.\n\n' +
+      'Они хранятся здесь до 23:59 текущего дня. В 00:00 они перемещаются ' +
+      'в архив, и этот список становится пустым.\n\n' +
+      'Стрелка ↩ возвращает дело в исходный список.'],
+
+    archive: ['Архив',
+      'Сюда попадают дела из списка «Сделано за сегодня».\n\n' +
+      'Каждое дело хранится здесь в течение года с момента попадания ' +
+      'в архив. Потом удаляется насовсем.\n\n' +
+      'Самое свежее дело наверху списка, самое давнее — в самом низу. ' +
+      'У каждого стоит дата выполнения.\n\n' +
+      'Архив поможет, если в тексте вашего дела были важные данные: ' +
+      'ссылки, цифры и прочее.'],
+
+    bin: ['Корзина',
+      'Удалённые дела попадают сюда. Они хранятся 7 дней, потом удаляются ' +
+      'насовсем. Рядом с каждым видно, сколько дней осталось.\n\n' +
+      'Стрелкой ↩ можно вернуть дело в тот раздел, из которого вы его ' +
+      'удалили.\n\n' +
+      'Чтобы удалить дело из списка, смахните его влево — появится красная ' +
+      'кнопка удаления.']
+  };
+
+  var tipBox = document.getElementById('tip');
+  var tipTimer = null;
+
+  var RING = 8;      // зазор подсветки вокруг заголовка (outline-offset + линия)
+  var GAP = 14;      // от рамки заголовка до окошка
+  var EDGE = 8;      // минимальный отступ от края экрана
+  var spotted = null;
+
+  function showTip(btn, key) {
+    var t = TIPS[key];
+    if (!t) { return; }
+    var bubble = tipBox.querySelector('.bubble');
+
+    // Успел нажать другую «i», пока прошлая пояснялка гасла — гашение
+    // отменяем, иначе его таймер спрятал бы уже новую.
+    clearTimeout(tipTimer);
+    tipBox.classList.remove('out');
+
+    tipBox.querySelector('b').textContent = t[0];
+    tipBox.querySelector('p').textContent = t[1];
+    tipBox.hidden = false;
+
+    // Подсвечиваем только свой блок: название со счётчиком и его кнопку.
+    // В строке архива их два, и корзина рядом гаснуть должна вместе со всем.
+    if (spotted) { spotted.classList.remove('spot'); }
+    spotted = btn.closest('.grp') || btn.closest('h2');
+    if (spotted) { spotted.classList.add('spot'); }
+
+    // Высоту меряем с уже подставленным текстом, иначе решение
+    // «сверху или снизу» принималось бы по чужому размеру.
+    bubble.style.top = '0px';
+    var h = bubble.offsetHeight;
+    var a = (spotted || btn).getBoundingClientRect();
+
+    /* У корзины заголовок внизу страницы, и окошко под ним целиком
+       уходило за экран. Есть место снизу — ставим снизу, нет — сверху. */
+    var below = (window.innerHeight - a.bottom - RING - GAP - EDGE) >= h;
+    var top = below ? a.bottom + RING + GAP : a.top - RING - GAP - h;
+    bubble.style.top = Math.max(EDGE, Math.min(top, window.innerHeight - h - EDGE)) + 'px';
+  }
+
+  tipBox.onclick = function () {
+    tipBox.classList.add('out');
+    if (spotted) { spotted.classList.remove('spot'); spotted = null; }
+    tipTimer = setTimeout(function () {
+      tipBox.hidden = true;
+      tipBox.classList.remove('out');
+    }, 160);
+  };
+
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('.info');
+    if (btn) { showTip(btn, btn.dataset.tip); return; }
+    var pen = e.target.closest('.pen');
+    if (pen) { rename(pen.dataset.ren); return; }
+    var del = e.target.closest('.del');
+    if (del) { askDelete(del.dataset.del); }
+  });
+
+  /* --- обмен с сервером --- */
+
+  function api(method, body) {
+    return fetch('/api/todo', {
+      method: method,
+      headers: {
+        'Authorization': 'Bearer ' + key,
+        'Content-Type': 'application/json'
+      },
+      body: body ? JSON.stringify(body) : undefined
+    });
+  }
+
+  /* Первый ответ сервера ещё не пришёл: на экране кэш, а он может
+     отставать. Всё, что нажали в это окно, запоминаем и повторяем
+     поверх серверного документа — действия адресуют дело по id,
+     поэтому повтор ложится на свежие данные правильно.
+     Без этого выполненные дела возвращались обратно: ответ GET,
+     отправленный ДО нажатия, приходил после и затирал документ. */
+  var ready = false;
+  var replay = [];
+  function early(fn) { if (!ready) { replay.push(fn); } }
+
+  function pull() {
+    if (busy()) { return Promise.resolve(); }   // не трогаем открытую правку
+    // Есть несохранённое — сервер спрашивать нечего, сначала отдадим своё.
+    if (ready && (dirty || sending)) { return Promise.resolve(); }
+    say('загрузка…');
+    var at = rev;              // метка: на какой правке ушёл запрос
+    return api('GET').then(function (r) {
+      if (r.status === 401) { say('нет доступа — открой ссылку с ключом', true); throw 0; }
+      if (!r.ok) { throw 0; }
+      return r.json();
+    }).then(function (d) {
+      // Пока ждали ответ, могли начать править — тогда ответ выбрасываем,
+      // следующий опрос его переспросит.
+      if (busy()) { say('сохранено'); return; }
+      // Ответ устарел: пока он летел, дела успели поправить. Для ПЕРВОГО
+      // ответа это не повод его бросать — наоборот, только он и даёт
+      // снимок сервера, а правки мы повторим поверх.
+      if (ready && rev !== at) { return; }
+      proto = d.proto || 0;
+      delete d.proto;
+      doc = d;
+      relist();     // набор разделов задаёт документ, не константа
+      synced = clone(doc);
+      // Полночь могла наступить, пока страница висела открытой или
+      // лежала закрытой. Если что-то переехало в архив — сохраняем,
+      // иначе сервер продолжит присылать вчерашние дела как сегодняшние.
+      var moved = purge();
+      var redo = replay;
+      replay = [];
+      ready = true;
+      // Каждое повторённое действие само зовёт queue() и draw().
+      redo.forEach(function (f) { f(); });
+      draw();
+      // Кэш обновляем и здесь, не только при своих правках. Раньше он
+      // застывал на последней ЛОКАЛЬНОЙ правке: правил с телефона —
+      // ноутбук при следующем открытии показывал позавчерашний список,
+      // пока не придёт ответ сервера.
+      try { localStorage.setItem(CACHE, JSON.stringify(doc)); }
+      catch (e) { /* приватный режим — переживём */ }
+      if (!redo.length) { say('сохранено'); }
+      if (moved) { queue(); }
+    }).catch(function () {
+      ready = true;
+      replay = [];       // на экране кэш, действия к нему уже применены
+      var c = localStorage.getItem(CACHE);
+      if (c) { doc = JSON.parse(c); relist(); draw(); say('нет связи — показан черновик', true); }
+      else { draw(); say('нет связи', true); }   // draw убирает заглушки
+    }).then(function () {
+      // Сохранение, придержанное до снимка, отпускаем. Свой таймер
+      // мог уже отработать вхолостую, поэтому заводим заново.
+      if (dirty && !sending) { clearTimeout(timer); timer = setTimeout(push, 300); }
+    });
+  }
+
+  function queue() {
+    dirty = true;
+    rev++;
+    localStorage.setItem(CACHE, JSON.stringify(doc));
+    say('…');
+    clearTimeout(timer);
+    timer = setTimeout(push, 600);   // не дёргать сервер на каждую букву
+  }
+
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+
+  // Документ без черновиков — ровно то, что имеет право уехать.
+  function real() {
+    var out = clone(doc);
+    LISTS.forEach(function (n) {
+      out[n] = (out[n] || []).filter(function (t) { return !t.draft; });
+    });
+    return out;
+  }
+
+  /* Разница между тем, что на экране, и тем, что на сервере.
+
+     Для каждого затронутого раздела шлём порядок id и только те дела,
+     чьё содержимое изменилось. Остальные сервер возьмёт у себя по id.
+     Иначе вклеенная в дело статья на мегабайт улетала бы заново на
+     каждую галочку в любом другом разделе. */
+  function changes(now) {
+    var was = {};
+    STORED.forEach(function (name) {
+      (synced[name] || []).forEach(function (t) { was[t.id] = JSON.stringify(t); });
+    });
+
+    var body = { base: doc.updated || '', lists: {} };
+    var any = false;
+    STORED.forEach(function (name) {
+      var rows = now[name] || [];
+      var ids = rows.map(function (t) { return t.id; });
+      var old = (synced[name] || []).map(function (t) { return t.id; });
+      var tasks = {};
+      var touched = false;
+      rows.forEach(function (t) {
+        if (was[t.id] !== JSON.stringify(t)) { tasks[t.id] = t; touched = true; }
+      });
+      if (touched || ids.join('|') !== old.join('|')) {
+        body.lists[name] = { ids: ids, tasks: tasks };
+        any = true;
+      }
+    });
+    if (JSON.stringify(doc.names || {}) !== JSON.stringify(synced.names || {})) {
+      body.names = doc.names || {};
+      any = true;
+    }
+    // Набор своих разделов. Шлём только когда он менялся: сервер
+    // принимает его как есть, и пустой список означал бы «разделов нет».
+    if (JSON.stringify(doc.extra || []) !== JSON.stringify(synced.extra || [])) {
+      body.extra = doc.extra || [];
+      any = true;
+    }
+    if (JSON.stringify(doc.off || []) !== JSON.stringify(synced.off || [])) {
+      body.off = doc.off || [];
+      any = true;
+    }
+    if (JSON.stringify(doc.order || []) !== JSON.stringify(synced.order || [])) {
+      body.order = doc.order || [];
+      any = true;
+    }
+    return any ? body : null;
+  }
+
+  function push() {
+    if (sending || !dirty) { return; }
+    /* Первый ответ сервера ещё не пришёл — отправлять рано. Снимка нет,
+       и запрос ушёл бы целым документом со ссылкой на состояние из кэша.
+       Дальше выходило вот что: сохранение проходило, сервер обновлял
+       свою отметку времени, а следом приземлялся ответ GET, отправленный
+       ЕЩЁ РАНЬШЕ, — с уже устаревшей отметкой. Следующее сохранение
+       ссылалось на неё, сервер отвечал 409, приложение принимало его
+       версию — и только что нажатое исчезало. Ждём снимок: он придёт
+       через доли секунды, а правка никуда не денется, она в кэше. */
+    if (!ready) { return; }
+    var now = real();
+    var body;
+    if (synced && proto >= 2) {
+      body = changes(now);
+      // Правки свелись к нулю (например, отменили то же, что и завели).
+      if (!body) { dirty = false; say('сохранено'); return; }
+    } else {
+      // Снимка ещё нет: первое сохранение нового списка. Шлём целиком.
+      body = now;
+      body.base = doc.updated || '';
+    }
+    sending = true;
+    sentRev = rev;
+    api('PUT', body).then(function (r) {
+      sending = false;
+      if (r.status === 409) {
+        // Кто-то (телефон или другая вкладка) успел раньше.
+        return r.json().then(function (d) {
+          if (busy()) { return; }   // правку не сносим, разберёмся после неё
+          doc = d.current;
+          relist();
+          synced = clone(doc);
+          purge(); draw();
+          say('данные обновлены с сервера', true);
+          dirty = false;
+        });
+      }
+      if (r.status === 429 || r.status === 507) {
+        // Сервер отказался заводить ЕЩЁ один список. Повторять смысла
+        // нет: список дел никуда не денется, он лежит в браузере.
+        dirty = false;
+        say(r.status === 429
+          ? 'новый список — не чаще трёх в сутки'
+          : 'на сервере нет места под новый список', true);
+        return;
+      }
+      if (!r.ok) { throw 0; }
+      return r.json().then(function (d) {
+        doc.updated = d.updated;
+        // Снимок — ровно то, что уехало, а не то, что на экране сейчас:
+        // пока шёл запрос, могли поправить ещё раз.
+        synced = now;
+        synced.updated = d.updated;
+        localStorage.setItem(CACHE, JSON.stringify(doc));
+        if (rev === sentRev) {
+          dirty = false;
+          say('сохранено');
+        } else {
+          setTimeout(push, 150);   // успели поправить — досылаем
+        }
+      });
+    }).catch(function () {
+      sending = false;
+      say('не сохранено — повтор', true);
+      setTimeout(push, 8000);
+    });
+  }
+
+  /* --- данные --- */
+
+  // Начало сегодняшних суток по часам телефона. new Date() всегда
+  // местное время, поэтому список сам переедет вместе с хозяином:
+  // в новом часовом поясе полночь наступит по новому времени.
+  function midnight() {
+    var d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+
+  function purge() {
+    var now = Date.now();
+    var today = midnight();
+    var changed = false;
+    doc.done = doc.done || [];
+    doc.archive = doc.archive || [];
+    var stay = [];
+    doc.done.forEach(function (t) {
+      // Календарные сутки, а не скользящие 24 часа: сделанное в 8 утра
+      // висит до 23:59 того же дня и уезжает в архив ровно в полночь.
+      if ((t.doneAt || 0) >= today) { stay.push(t); }
+      else { doc.archive.unshift(t); changed = true; }
+    });
+    doc.done = stay;
+    // Год в архиве — и удаляем насовсем.
+    doc.archive = doc.archive.filter(function (t) { return (t.doneAt || 0) > now - YEAR; });
+    // Свежее сверху, старое внизу.
+    doc.archive.sort(function (a, b) { return (b.doneAt || 0) - (a.doneAt || 0); });
+
+    // Корзина: неделя на передумать, дальше стирается насовсем.
+    doc.bin = (doc.bin || []).filter(function (t) { return (t.delAt || 0) > now - WEEK; });
+    doc.bin.sort(function (a, b) { return (b.delAt || 0) - (a.delAt || 0); });
+
+    return changed;   // переезд в архив надо донести до сервера
+  }
+
+  function find(id) {
+    var all = STORED;
+    for (var i = 0; i < all.length; i++) {
+      var arr = doc[all[i]];
+      for (var j = 0; j < arr.length; j++) {
+        if (arr[j].id === id) { return { list: all[i], idx: j, task: arr[j] }; }
+      }
+    }
+    return null;
+  }
+
+  /* --- отрисовка --- */
+
+  function linkify(text) {
+    var out = document.createDocumentFragment();
+    var re = /(https?:\/\/[^\s<>"']+)/g, last = 0, mm;
+    while ((mm = re.exec(text))) {
+      if (mm.index > last) { out.appendChild(document.createTextNode(text.slice(last, mm.index))); }
+      var a = document.createElement('a');
+      a.href = mm[1];
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = mm[1];
+      out.appendChild(a);
+      last = mm.index + mm[1].length;
+    }
+    if (last < text.length) { out.appendChild(document.createTextNode(text.slice(last))); }
+    return out;
+  }
+
+  function stamp(ms) {
+    var d = new Date(ms || 0);
+    return ('0' + d.getDate()).slice(-2) + '.' + ('0' + (d.getMonth() + 1)).slice(-2) + '.' + d.getFullYear();
+  }
+
+  // Контурное ведро: рисуем вектором, а не эмодзи — эмодзи на каждой
+  // системе своё и в кнопку по цвету не попадает.
+  var TRASH_SVG =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M9.4 5.7v-.5a2.6 2.6 0 0 1 5.2 0v.5"/>' +
+    '<path d="M3.6 8.4l.5-1.6a1.6 1.6 0 0 1 1.5-1.1h12.8a1.6 1.6 0 0 1 1.5 1.1l.5 1.6z"/>' +
+    '<path d="M5.9 9.2l.85 9.5a2 2 0 0 0 2 1.8h6.5a2 2 0 0 0 2-1.8l.85-9.5"/>' +
+    '<path d="M9.6 11.8v5.9M12 11.8v5.9M14.4 11.8v5.9"/>' +
+    '</svg>';
+
+  var STAR_SVG =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+    ' stroke-width="1.7" stroke-linejoin="round" width="24" height="24">' +
+    '<path d="M12 3.5l2.7 5.45 6.02.88-4.36 4.24 1.03 5.99L12 17.22' +
+    'l-5.39 2.84 1.03-5.99L3.28 9.83l6.02-.88z"/>' +
+    '</svg>';
+
+  function row(task, listName) {
+    var el = document.createElement('div');
+    el.className = 'item' + (task.star ? ' star' : '');
+    el.dataset.id = task.id;
+
+    // .card — видимая карточка с рамкой; она целиком уезжает влево
+    // при смахивании. .face — только раскладка содержимого внутри.
+    var card = document.createElement('div');
+    card.className = 'card';
+    el.appendChild(card);
+
+    var face = document.createElement('div');
+    face.className = 'face';
+    card.appendChild(face);
+
+    // Корзина: слева текст, справа возврат. Сколько дней осталось —
+    // мелким, чтобы было видно, когда дело сотрётся само.
+    if (listName === 'bin') {
+      if (task.sec) {
+        // Целый раздел. Отличается от дела с первого взгляда: зелёная
+        // грань слева, значок стопки, имя жирным и подпись со счётом.
+        el.className += ' sec';
+        var icon = document.createElement('span');
+        icon.className = 'secicon';
+        icon.innerHTML = STACK_SVG;
+        face.appendChild(icon);
+
+        var st = document.createElement('div');
+        st.className = 'txt';
+        var nm = document.createElement('b');
+        nm.textContent = task.text || 'Раздел';
+        st.appendChild(nm);
+        var sub = document.createElement('span');
+        sub.className = 'sub';
+        var n = (task.rows || []).length;
+        // Точка — разделитель в одной строке с именем, а не подпись снизу.
+        sub.textContent = ' · ' + (n ? n + ' ' + cases(n) : 'пусто');
+        st.appendChild(sub);
+        face.appendChild(st);
+      } else {
+        var bt = document.createElement('div');
+        bt.className = 'txt';
+        bt.appendChild(linkify(task.text));
+        face.appendChild(bt);
+      }
+
+      var left = Math.max(0, Math.ceil(((task.delAt || 0) + WEEK - Date.now()) / DAY));
+      var bw = document.createElement('div');
+      bw.className = 'when';
+      bw.textContent = left + ' дн.';
+      face.appendChild(bw);
+
+      var u = document.createElement('button');
+      u.className = 'undo';
+      u.textContent = '↩';
+      u.setAttribute('aria-label', task.sec ? 'вернуть раздел' : 'восстановить');
+      u.onclick = function () {
+        afterButton();
+        vanish(el, function () { restore(task.id); });
+      };
+      face.appendChild(u);
+      return el;
+    }
+
+    // Архив только читается: ни перетаскивания, ни кнопок.
+    if (listName === 'archive') {
+      var at = document.createElement('div');
+      at.className = 'txt';
+      at.appendChild(linkify(task.text));
+      face.appendChild(at);
+      var w = document.createElement('div');
+      w.className = 'when';
+      w.textContent = stamp(task.doneAt);
+      face.appendChild(w);
+      return el;
+    }
+
+    if (listName !== 'done') {
+      var g = document.createElement('div');
+      g.className = 'grip';
+      g.textContent = '⠿';
+      face.appendChild(g);
+    }
+
+    var b = document.createElement('button');
+    if (listName === 'done') {
+      // В «сделано» галочка — просто метка, а не кнопка: вернуть дело
+      // можно только стрелкой справа. Иначе оно отменялось случайным
+      // касанием при прокрутке.
+      b.className = 'box mark';
+      b.textContent = '✓';
+      b.disabled = true;
+      b.setAttribute('aria-label', 'сделано');
+    } else {
+      b.className = 'box';
+      b.setAttribute('aria-label', 'сделано');
+      var fired = false;
+      b.onclick = function () {
+        if (task.draft || fired) { return; }
+        fired = true;
+        // Сначала галочка встаёт на место, и только потом дело улетает
+        // в «сделано»: иначе исчезает раньше, чем глаз успел подтвердить.
+        b.classList.add('ticked');
+        b.textContent = '✓';
+        setTimeout(function () { toggle(task.id); }, 300);
+      };
+    }
+    face.appendChild(b);
+
+    var t = document.createElement('div');
+    t.className = 'txt';
+    if (!task.draft) {
+      t.appendChild(linkify(task.text));
+    }
+    if (!task.draft && listName !== 'done') {
+      t.onclick = function (e) {
+        if (e.target.tagName === 'A') { return; }   // по ссылке — переход, не правка
+        // Правка уже открыта: тап внутри поля — это установка курсора,
+        // клик всплывает сюда же. Без этой проверки edit() запускался
+        // повторно, старое поле сносилось, его blur вызывал сохранение —
+        // и карточка закрывалась, будто нажали «ок».
+        if (t.querySelector('textarea')) { return; }
+        if (closeSwipe(el)) { return; }             // карточка была отодвинута — сначала закрыть
+        edit(t, task);
+      };
+    }
+    face.appendChild(t);
+
+    if (task.draft) {
+      // Порядок: сначала «×», справа от него «ок».
+      var no = document.createElement('button');
+      no.className = 'nope';
+      no.textContent = '×';
+      no.setAttribute('aria-label', 'не добавлять');
+      // Черновик пропадает ТОЛЬКО отсюда: недописанное дело
+      // само по себе никуда не денется и никуда не добавится.
+      no.onpointerdown = function (e) { e.preventDefault(); afterButton(); dropDraft(task.id); };
+      face.appendChild(no);
+
+      var ok = document.createElement('button');
+      ok.className = 'ok';
+      ok.textContent = 'ок';
+      // pointerdown вместо click: иначе поле сначала теряет фокус,
+      // строка успевает исчезнуть, и до click дело не доходит.
+      ok.onpointerdown = function (e) { e.preventDefault(); afterButton(); commitDraft(task.id); };
+      face.appendChild(ok);
+      return el;
+    }
+
+    if (listName === 'done') {
+      // Из «сделано» кнопка возвращает дело в его прежний раздел.
+      // Насовсем оно уйдёт через год из архива.
+      var k = document.createElement('button');
+      k.className = 'kill';
+      k.textContent = '↩';
+      k.setAttribute('aria-label', 'вернуть в список');
+      k.onclick = function () { toggle(task.id); };
+      face.appendChild(k);
+      return el;
+    }
+
+    // Обычное дело: удаляется смахиванием влево, кнопка прячется под карточкой.
+    var trash = document.createElement('button');
+    trash.className = 'trash';
+    trash.innerHTML = TRASH_SVG;
+    trash.setAttribute('aria-label', 'удалить');
+    // pointerdown, а не click: карточка отъезжает и перерисовывается, и
+    // click иногда уже не находил под пальцем ту же кнопку — приходилось
+    // тапать дважды.
+    trash.onpointerdown = function (e) {
+      e.preventDefault();
+      afterButton();
+      // Строка сначала схлопывается на месте вместе с корзиной, и только
+      // потом правится список: соседи подтягиваются плавно, а не прыжком.
+      vanish(el, function () { remove(task.id); });
+    };
+    el.insertBefore(trash, card);
+
+    // Звезда: включает и выключает кольцо. Карточка после нажатия
+    // закрывается сама — второй жест ради того же действия не нужен.
+    var fav = document.createElement('button');
+    fav.className = 'fav' + (task.star ? ' lit' : '');
+    fav.innerHTML = STAR_SVG;
+    fav.setAttribute('aria-label', task.star ? 'снять выделение' : 'выделить');
+    fav.onpointerdown = function (e) {
+      e.preventDefault();
+      afterButton();
+      var on = !fav.classList.contains('lit');
+      fav.classList.toggle('lit', on);
+      el.classList.toggle('star', on);
+      // Разгорание — только здесь, на живом нажатии.
+      if (on) {
+        el.classList.add('fresh');
+        setTimeout(function () { el.classList.remove('fresh'); }, 600);
+      }
+      fav.setAttribute('aria-label', on ? 'снять выделение' : 'выделить');
+      star(task.id, on);
+      // Сначала видно, что звезда загорелась, и только потом карточка
+      // уезжает обратно. Наоборот подтверждение проскакивало бы мимо глаз.
+      setTimeout(function () { shut(el); }, 300);
+    };
+    el.insertBefore(fav, card);
+
+    return el;
+  }
+
+  /* --- движение ---
+     Список целиком пересобирается на каждое действие, поэтому все
+     перемещения происходили мгновенно. Приём называется FLIP:
+     First — запомнили, где карточки были;
+     Last — собрали разметку заново, браузер расставил их по-новому;
+     Invert — трансформом сдвигаем каждую обратно в старое место;
+     Play — снимаем трансформ, браузер доезжает сам.
+     Дёшево: разметка не двигается, двигается только композитор. */
+
+  var MOVE = 'transform .3s cubic-bezier(.2,.8,.2,1)';
+  var justAdded = null;   // id строки, которая должна проявиться
+
+  function snap() {
+    var map = {};
+    [].forEach.call(document.querySelectorAll('.item[data-id]'), function (el) {
+      if (el.classList.contains('ghost')) { return; }
+      var r = el.getBoundingClientRect();
+      if (!r.height) { return; }   // спрятанная на время перетаскивания
+      map[el.dataset.id] = r;
+    });
+    return map;
+  }
+
+  function flip(before) {
+    [].forEach.call(document.querySelectorAll('.item[data-id]'), function (el) {
+      if (el.classList.contains('in')) { return; }   // у новой строки своя анимация
+      var was = before[el.dataset.id];
+      if (!was) { return; }
+      var now = el.getBoundingClientRect();
+      var dx = was.left - now.left, dy = was.top - now.top;
+      if (!dx && !dy) { return; }
+      el.style.transition = 'none';
+      el.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+      requestAnimationFrame(function () {
+        el.style.transition = MOVE;
+        el.style.transform = '';
+      });
+    });
+  }
+
+  // Карточка схлопывается на месте, и только потом трогаем данные:
+  // иначе соседи прыгают вверх раньше, чем глаз успевает за ними.
+  function vanish(el, done) {
+    var h = el.getBoundingClientRect().height;
+    el.style.height = h + 'px';
+    el.style.overflow = 'hidden';
+    requestAnimationFrame(function () {
+      el.style.transition = 'height .24s ease, opacity .2s ease, margin-bottom .24s ease';
+      el.style.height = '0px';
+      el.style.opacity = '0';
+      el.style.marginBottom = '0px';
+    });
+    setTimeout(done, 250);
+  }
+
+  // Своя прокрутка: focus() у поля ввода дёргает страницу рывком,
+  // поэтому фокус ставим без прокрутки, а доезжаем сами.
+  /* Ставит строку в середину ВИДИМОЙ части экрана. Видимой, а не всей:
+     когда снизу выехала клавиатура, window.innerHeight её не замечает —
+     на Android Chrome ужимается только визуальная область, а разметка
+     остаётся прежней высоты. Считая по innerHeight, мы ставили строку
+     в середину полного экрана, то есть ровно под клавиатуру. */
+  function glide(el) {
+    var vv = window.visualViewport;
+    var view = vv ? vv.height : window.innerHeight;
+    var off = vv ? vv.offsetTop : 0;
+    var box = el.getBoundingClientRect();
+    var to = window.scrollY + box.top - off - (view - box.height) / 2;
+    to = Math.max(0, Math.min(to, document.body.scrollHeight - window.innerHeight));
+    try { window.scrollTo({ top: to, behavior: 'smooth' }); }
+    catch (e) { window.scrollTo(0, to); }
+  }
+
+  /* Клавиатура ничего не сдвигает — она накрывает страницу снизу.
+     Поэтому у последних строк списка просто нет места, куда уехать:
+     прокрутка уже в самом низу, ниже пусто. Подкладываем страницы
+     ровно в рост клавиатуры — и появляется куда прокручивать.
+     Слушатель заведён раньше того, что доводит строку до середины:
+     сначала место, потом переезд. */
+  if (window.visualViewport) {
+    (function () {
+      var vv = window.visualViewport;
+      vv.addEventListener('resize', function () {
+        var gap = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+        document.body.style.paddingBottom = gap ? gap + 'px' : '';
+      });
+    }());
+  }
+
+  // Разворачивание полки: height от 0 до фактической и обратно.
+  // auto анимировать нельзя, поэтому меряем и подставляем число.
+  function fold(box, show, done) {
+    if (show) {
+      box.hidden = false;
+      var h = box.scrollHeight;
+      box.style.overflow = 'hidden';
+      box.style.height = '0px';
+      requestAnimationFrame(function () { box.style.height = h + 'px'; });
+      setTimeout(function () {
+        box.style.height = '';
+        box.style.overflow = '';
+        if (done) { done(); }
+      }, 260);
+    } else {
+      box.style.overflow = 'hidden';
+      box.style.height = box.scrollHeight + 'px';
+      requestAnimationFrame(function () { box.style.height = '0px'; });
+      setTimeout(function () {
+        box.hidden = true;
+        box.style.height = '';
+        box.style.overflow = '';
+      }, 260);
+    }
+  }
+
+  // before — снимок позиций, сделанный заранее. Нужен там, где разметка
+  // успела измениться до перерисовки: снятый после этого снимок описывал
+  // бы уже не то состояние, и FLIP проигрывал бы движение, которого
+  // на самом деле не было.
+  function draw(before) {
+    before = before || snap();
+    mountSections();   // свои разделы могли появиться в ответе сервера
+    // Разметка пересоздаётся — старые ссылки на карточки протухают.
+    opened = null;
+    swipe = null;
+    ALL.forEach(function (name) {
+      var host = document.getElementById(name);
+      host.innerHTML = '';
+      if (!doc[name].length) {
+        var e = document.createElement('div');
+        e.className = 'empty';
+        e.textContent = name === 'done' ? 'пока ничего'
+          : name === 'archive' ? 'архив пуст'
+          : name === 'bin' ? 'корзина пуста'
+          : 'пусто';
+        host.appendChild(e);
+      }
+      doc[name].forEach(function (task) {
+        var el = row(task, name);
+        if (task.id === justAdded) { el.classList.add('in'); }
+        host.appendChild(el);
+      });
+    });
+    justAdded = null;
+    flip(before);
+    renderTitles();
+    document.getElementById('cnt').textContent = doc.done.length;
+    var arcCnt = document.getElementById('arcCnt');
+    arcCnt.textContent = '';
+    if (doc.archive.length) {
+      ['—', String(doc.archive.length)].forEach(function (part) {
+        var sp = document.createElement('span');
+        sp.textContent = part;
+        arcCnt.appendChild(sp);
+      });
+    }
+    document.getElementById('binCnt').textContent = doc.bin.length || '';
+
+    // Черновик рисуется уже открытым на ввод.
+    var d = document.querySelector('.item .ok');
+    if (d) { openDraft(d.closest('.item')); }
+  }
+
+  /* --- действия --- */
+
+  /* Кнопки на карточке срабатывают по pointerdown и тут же перерисовывают
+     строку. Но касание на этом не кончилось: браузер добивает его обычным
+     click — и попадает уже в НОВУЮ строку на том же месте, открывая её на
+     правку. Гасим первый клик после нажатия любой такой кнопки.
+     Перехват в фазе capture: до того, как клик дойдёт до строки. */
+  var swallowUntil = 0;
+  function afterButton(ms) { swallowUntil = Date.now() + (ms || 500); }
+  document.addEventListener('click', function (e) {
+    if (Date.now() < swallowUntil) { e.stopPropagation(); e.preventDefault(); }
+  }, true);
+
+  function edit(node, task) {
+    if (node.querySelector('textarea')) { return; }   // второй заход запрещён
+    var ta = document.createElement('textarea');
+    // rows=1 обязательно. По умолчанию у textarea две строки, и при
+    // height:auto она занимает две — scrollHeight возвращал их же,
+    // поэтому однострочное дело при тапе раздувалось вдвое и оседало
+    // обратно только после сохранения.
+    ta.rows = 1;
+    ta.value = task.text;
+    node.textContent = '';
+    node.appendChild(ta);
+
+    var saved = false;
+    function save() {
+      if (saved) { return; }     // и blur, и кнопка ведут сюда — сохраняем один раз
+      saved = true;
+      var v = ta.value.trim();
+      if (v && v !== task.text) { task.text = v; queue(); }
+      draw();
+    }
+
+    // Кнопка «ок» — чтобы дописать и сохранить пальцем, без Enter.
+    var ok = document.createElement('button');
+    ok.className = 'ok';
+    ok.textContent = 'ок';
+    ok.onpointerdown = function (e) { e.preventDefault(); afterButton(); save(); };
+    node.parentNode.appendChild(ok);
+
+    // Высоту считаем ТОЛЬКО после того, как кнопка встала на место:
+    // она отбирает ширину, строка переносится, и замер до неё врал —
+    // поле оставалось в одну строку, а текст в нём уезжал вверх.
+    var fit = function () { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; };
+    fit();
+    ta.oninput = fit;
+    if (!demo) {
+      try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    }
+
+    ta.onblur = save;
+    ta.onkeydown = function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ta.blur(); }
+      if (e.key === 'Escape') { ta.value = task.text; ta.blur(); }
+    };
+
+    // Ровно то же, что и у нового дела: строка доводится до середины
+    // видимой части экрана, а когда снизу выедет клавиатура — ещё раз.
+    // Без этого правка дела из нижнего раздела уходила под клавиатуру,
+    // и вытащить её оттуда было нечем.
+    var item = node.closest && node.closest('.item');
+    if (item && !demo) { keepInView(item); }
+  }
+
+  /* Довести строку до видимой части и удержать её там, пока выезжает
+     клавиатура. Вынесено отдельно: этим пользуются и черновик, и правка
+     уже существующего дела. */
+  function keepInView(el) {
+    requestAnimationFrame(function () { glide(el); });
+    var vv = window.visualViewport;
+    if (!vv) { return; }
+    var again = function () {
+      if (document.body.contains(el)) { glide(el); }
+    };
+    vv.addEventListener('resize', again);
+    setTimeout(function () { vv.removeEventListener('resize', again); }, 1500);
+  }
+
+  /* Запомнить, где дело стояло, перед тем как унести его в «сделано»
+     или в корзину. Пишем не номер, а id соседа сверху: пока дело лежит
+     в стороне, список живёт своей жизнью — что-то добавили, что-то
+     убрали, — и номер к моменту возврата уже врёт. Сосед не врёт.
+     Номер держим вторым эшелоном: соседа тоже могли убрать.
+     Первая строка — особый случай: соседа сверху нет, пишем пустую
+     строку, и это не то же самое, что «не знаю». */
+  function keepSpot(task, list, idx) {
+    task.aft = idx > 0 ? doc[list][idx - 1].id : '';
+    task.at = idx;
+  }
+
+  /* Положить дело туда, откуда его забрали. */
+  function putBack(task, list) {
+    var arr = doc[list] || (doc[list] = []);
+    var pos = null;
+    if (task.aft) {
+      for (var i = 0; i < arr.length; i++) {
+        if (arr[i].id === task.aft) { pos = i + 1; break; }
+      }
+    } else if (task.aft === '') {
+      pos = 0;                                   // стояло первым
+    }
+    if (pos === null) {
+      pos = typeof task.at === 'number' ? task.at : 0;
+    }
+    delete task.aft;
+    delete task.at;
+    arr.splice(Math.max(0, Math.min(pos, arr.length)), 0, task);
+  }
+
+  function toggle(id) {
+    early(function () { toggle(id); });
+    var f = find(id);
+    if (!f) { return; }
+    if (f.list === 'done') {
+      doc[f.list].splice(f.idx, 1);
+      f.task.doneAt = 0;
+      var back = f.task.from || 'free';
+      if (LISTS.indexOf(back) < 0) { back = LISTS[0]; }
+      putBack(f.task, back);
+    } else {
+      keepSpot(f.task, f.list, f.idx);
+      doc[f.list].splice(f.idx, 1);
+      f.task.from = f.list;              // чтобы вернуть туда же
+      f.task.doneAt = Date.now();
+      doc.done.unshift(f.task);
+    }
+    queue(); draw();
+  }
+
+  // Удаление не стирает дело, а кладёт его в корзину на неделю.
+  // Выделение живёт прямо в деле и уезжает на сервер вместе с ним.
+  // draw() здесь звать нельзя: перерисовка оборвала бы анимацию кольца
+  // и рывком закрыла бы карточку.
+  function star(id, on) {
+    early(function () { star(id, on); });
+    var f = find(id);
+    if (!f) { return; }
+    if (on) { f.task.star = true; } else { delete f.task.star; }
+    queue();
+  }
+
+  function remove(id) {
+    early(function () { remove(id); });
+    var f = find(id);
+    if (!f) { return; }
+    keepSpot(f.task, f.list, f.idx);
+    doc[f.list].splice(f.idx, 1);
+    f.task.binFrom = f.list;      // куда вернуть, если передумает
+    f.task.delAt = Date.now();
+    doc.bin.unshift(f.task);
+    queue(); draw();
+  }
+
+  /* Вернуть из корзины целый раздел вместе с делами. */
+  function restoreSection(entry, idx) {
+    var key = entry.sec;
+    var own = doc.extra || [];
+    if (EXTRA_RE.test(key) && own.indexOf(key) < 0 && own.length >= MAX_EXTRA) {
+      say('сначала освободите место: разделов уже ' + MAX_EXTRA, true);
+      return;
+    }
+    doc.bin.splice(idx, 1);
+
+    if (EXTRA_RE.test(key)) {
+      if (own.indexOf(key) < 0) { doc.extra = own.concat([key]); }
+    } else {
+      doc.off = (doc.off || []).filter(function (n) { return n !== key; });
+    }
+    // Название пережило удаление в самой записи корзины.
+    if (entry.text && entry.text !== TITLES[key]) {
+      doc.names = doc.names || {};
+      doc.names[key] = entry.text;
+    }
+    relist();
+    // Дело с таким id могло за неделю появиться заново — тогда копию
+    // из корзины не поднимаем, иначе в списке окажутся два одинаковых.
+    doc[key] = (entry.rows || []).filter(function (t) { return !find(t.id); });
+    doc[key].forEach(function (t) { delete t.delAt; delete t.binFrom; });
+    queue();
+    draw();
+    var host = document.querySelector('section[data-sec="' + key + '"]');
+    if (host) {
+      host.classList.add('born');
+      setTimeout(function () { host.classList.remove('born'); }, 700);
+      try { host.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+      catch (e) { host.scrollIntoView(); }
+    }
+  }
+
+  function restore(id) {
+    early(function () { restore(id); });
+    var f = find(id);
+    if (!f || f.list !== 'bin') { return; }
+    if (f.task.sec) { return restoreSection(f.task, f.idx); }
+    doc.bin.splice(f.idx, 1);
+    var back = f.task.binFrom;
+    // Раздел могли удалить, пока дело лежало в корзине.
+    if (LISTS.indexOf(back) < 0) { back = LISTS[0]; }
+    delete f.task.delAt;
+    delete f.task.binFrom;
+    putBack(f.task, back);
+    justAdded = id;    // в новом списке дело проявляется, а не возникает
+    queue(); draw();
+  }
+
+  /* --- добавление: пустое дело прямо в списке --- */
+
+  /* Через делегирование, а не перебором кнопок при загрузке: у своих
+     разделов разметка появляется позже, и на прямой обработчик их «+»
+     уже не попал бы. */
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest && e.target.closest('.plus');
+    if (!btn) { return; }
+    var list = btn.dataset.add;
+    if (!doc[list]) { return; }        // раздел успели убрать с другого устройства
+    dropDrafts();
+    var id = uid();
+    doc[list].push({ id: id, text: '', draft: true });
+    justAdded = id;
+    draw();     // draw сам откроет черновик на ввод
+  });
+
+  // Жмут «+» в другом разделе: пустой черновик убираем, а уже
+  // написанный не теряем — дописанный текст фиксируем как дело.
+  function dropDrafts() {
+    LISTS.forEach(function (name) {
+      doc[name] = doc[name].filter(function (t) {
+        if (!t.draft) { return true; }
+        if (!(t.text || '').trim()) { return false; }
+        t.text = t.text.trim();
+        delete t.draft;
+        return true;
+      });
+    });
+  }
+
+  // Черновик рисуется уже с полем ввода и поднятой клавиатурой.
+  function openDraft(el) {
+    var host = el.querySelector('.txt');
+    if (host.querySelector('textarea')) { return; }
+    var f = find(el.dataset.id);
+    if (!f) { return; }
+
+    var ta = document.createElement('textarea');
+    ta.rows = 1;
+    ta.placeholder = 'Что сделать';
+    ta.enterKeyHint = 'done';
+    // Набранное восстанавливаем из самого дела. Раньше поле создавалось
+    // пустым, и любая перерисовка списка (например, когда рядом
+    // перетащили другое дело) стирала текст с экрана, хотя в памяти
+    // он был.
+    ta.value = f.task.text || '';
+    host.appendChild(ta);
+    var fit = function () { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; };
+    fit();
+    ta.oninput = function () { fit(); f.task.text = ta.value; };
+    if (!demo) {
+      // preventScroll: иначе браузер сам швыряет страницу к полю рывком.
+      try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    }
+    ta.onkeydown = function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitDraft(f.task.id); }
+      if (e.key === 'Escape') { dropDraft(f.task.id); }
+    };
+    // Клик мимо черновик НЕ убивает: уйти он может только через «×».
+    // Доводим строку до видимой части и держим её там, пока снизу
+    // выезжает клавиатура, — тем же кодом, что и правка дела.
+    if (!demo) { keepInView(el); }
+  }
+
+  // Отмена: недописанное дело выкидывается и никуда не сохраняется.
+  function dropDraft(id) {
+    var f = find(id);
+    if (!f) { return; }
+    doc[f.list].splice(f.idx, 1);
+    draw();   // queue не зовём: на сервере этого дела и не было
+  }
+
+  function commitDraft(id) {
+    var f = find(id);
+    if (!f) { return; }
+    var v = (f.task.text || '').trim();
+    if (!v) { doc[f.list].splice(f.idx, 1); draw(); return; }
+    f.task.text = v;
+    delete f.task.draft;
+    queue(); draw();
+  }
+
+  /* --- архив и корзина: две сворачивающиеся полки в одной строке --- */
+
+  document.getElementById('binIcon').innerHTML = TRASH_SVG;
+
+  // Карандаш: диагональный корпус и остриё. Рисуем вектором по той же
+  // причине, что и корзину, — эмодзи на каждой системе своё.
+  var PEN_SVG =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M14.5 4.5l5 5"/>' +
+    '<path d="M17 2l5 5-12.5 12.5L3 22l2.5-6.5z"/>' +
+    '</svg>';
+  paintIcons();
+
+  var arcHead = document.getElementById('arcHead');
+  var binBtn = document.getElementById('binBtn');
+  var arcBox = document.getElementById('archive');
+  var binBox = document.getElementById('bin');
+
+  /* Полка всегда одна. Раньше архив и корзина открывались независимо,
+     и вторая просто отпихивала первую вниз. Состояние держим в
+     переменной, а не читаем hidden: закрытие анимированное, и hidden
+     сбрасывается не сразу — быстрые тапы читали бы устаревшее. */
+  var shelf = null;   // 'archive' | 'bin' | null
+
+  /* Полка раскрывается вниз, за нижний край экрана, и до содержимого
+     приходилось скроллить. Доводим страницу так, чтобы низ полки совпал
+     с низом экрана. Если содержимое выше экрана — упираемся в её верх,
+     иначе начало уехало бы за шапку.
+     Считаем ПОСЛЕ анимации: пока полка растёт, документ ещё короткий
+     и браузер обрежет прокрутку по текущей высоте страницы. */
+  function reveal(box) {
+    var r = box.getBoundingClientRect();
+    var head = document.querySelector('header').getBoundingClientRect().height;
+    var title = document.getElementById('footHead').getBoundingClientRect();
+
+    var bottom = window.scrollY + r.bottom + 14;      // +воздух под последней строкой
+    var to = bottom - window.innerHeight;
+    var topLimit = window.scrollY + title.top - head - 8;
+    to = Math.min(to, topLimit);
+    to = Math.max(0, to);
+    try { window.scrollTo({ top: to, behavior: 'smooth' }); }
+    catch (e) { window.scrollTo(0, to); }
+  }
+
+  function openShelf(want) {
+    if (want === shelf) { want = null; }   // повторный тап закрывает
+    if (shelf === 'archive' && want !== 'archive') { fold(arcBox, false); }
+    if (shelf === 'bin' && want !== 'bin') { fold(binBox, false); }
+    if (want === 'archive') { fold(arcBox, true, function () { reveal(arcBox); }); }
+    if (want === 'bin') { fold(binBox, true, function () { reveal(binBox); }); }
+    shelf = want;
+    arcHead.classList.toggle('open', want === 'archive');
+    binBtn.classList.toggle('on', want === 'bin');
+  }
+
+  arcHead.onclick = function () { openShelf('archive'); };
+  binBtn.onclick = function () { openShelf('bin'); };
+
+  /* --- перетаскивание ---
+     Стандартный HTML5 drag&drop на телефоне не работает вообще,
+     поэтому всё на pointer-событиях: они одинаковы для мыши и пальца. */
+
+  var drag = null;
+
+  document.addEventListener('pointerdown', function (e) {
+    var grip = e.target.closest('.grip');
+    if (!grip) { return; }
+    e.preventDefault();
+
+    var item = grip.closest('.item');
+    var box = item.getBoundingClientRect();
+
+    var ghost = item.cloneNode(true);
+    ghost.className = 'item ghost';
+    ghost.querySelector('.card').style.transform = '';   // тащим ровную карточку
+    ghost.style.width = box.width + 'px';
+    ghost.style.left = box.left + 'px';
+    ghost.style.top = box.top + 'px';
+    document.body.appendChild(ghost);
+
+    var mark = document.createElement('div');
+    mark.className = 'drop';
+    mark.style.height = box.height + 'px';   // гнездо ровно в рост карточки
+
+    // Порядок здесь важен. Сначала гнездо встаёт НА МЕСТО карточки и
+    // только потом она уходит из потока: высота на этом месте не
+    // меняется ни на кадр, и список остаётся стоять.
+    // Раньше было наоборот — карточка пропадала, всё под ней прыгало
+    // вверх, и позиция считалась уже по съехавшей разметке: дело
+    // «просилось» на строку ниже, хотя палец ещё не двинулся.
+    var host = item.parentNode;
+    var mine = [].slice.call(host.querySelectorAll('.item')).indexOf(item);
+    host.insertBefore(mark, item);
+    item.style.display = 'none';
+
+    drag = {
+      id: item.dataset.id, item: item, ghost: ghost, mark: mark,
+      // Цель известна с самого начала: место, откуда взяли. Отпустишь
+      // не сдвинув — дело вернётся туда же.
+      target: { host: host, list: host.id, index: mine },
+      markIdx: mine,
+      dx: e.clientX - box.left, dy: e.clientY - box.top,
+      y: e.clientY      // где палец сейчас — по этому решаем, катить ли страницу
+    };
+    roller = requestAnimationFrame(roll);
+    // Указателя может уже не быть (или событие не от живого пальца) —
+    // захват тогда не нужен, движение всё равно ловится на document.
+    try { grip.setPointerCapture(e.pointerId); } catch (err) { /* не беда */ }
+  }, { passive: false });
+
+  function rowsOf(host) {
+    return [].slice.call(host.querySelectorAll('.item')).filter(function (r) {
+      return r !== drag.item && r !== drag.ghost;
+    });
+  }
+
+  // Считаем НОМЕР позиции, а не соседний элемент разметки.
+  // Соседом может оказаться сама полоска-указатель — на этом всё и ломалось.
+  function aim(y) {
+    var best = null, bestDist = Infinity;
+    LISTS.forEach(function (name) {
+      var host = document.getElementById(name);
+      var b = host.getBoundingClientRect();
+      var d = y < b.top ? b.top - y : (y > b.bottom ? y - b.bottom : 0);
+      if (d < bestDist) { bestDist = d; best = { host: host, list: name }; }
+    });
+    if (!best) { return; }
+
+    var rows = rowsOf(best.host);
+    var idx = rows.length;
+    for (var i = 0; i < rows.length; i++) {
+      var rb = rows[i].getBoundingClientRect();
+      if (y < rb.top + rb.height / 2) { idx = i; break; }
+    }
+    best.index = idx;
+    drag.target = best;
+
+    // Гнездо переставляем ТОЛЬКО когда место правда сменилось: иначе
+    // на каждое движение пальца список перекладывается заново и дрожит.
+    if (drag.mark.parentNode !== best.host || drag.markIdx !== idx) {
+      var was = snap();
+      best.host.insertBefore(drag.mark, rows[idx] || null);
+      drag.markIdx = idx;
+      flip(was);          // соседи расступаются плавно, а не прыжком
+    }
+  }
+
+  document.addEventListener('pointermove', function (e) {
+    if (!drag) { return; }
+    e.preventDefault();
+    drag.y = e.clientY;
+    drag.ghost.style.left = (e.clientX - drag.dx) + 'px';
+    drag.ghost.style.top = (e.clientY - drag.dy) + 'px';
+    aim(e.clientY);
+  }, { passive: false });
+
+  /* --- автопрокрутка на весу ---
+     Разделов стало четыре, и дело из верхнего в нижний приходилось
+     нести в несколько приёмов: опустил, проскроллил, взял заново.
+     Теперь палец у края экрана сам катит страницу, а карточка
+     остаётся в руке: ghost стоит position:fixed, под пальцем он и
+     висит. Вернул палец к середине — прокрутка встала. */
+
+  var EDGE = 110;      // высота чувствительной полосы у края, px
+  var SLOW = 70;       // скорость на дальней границе полосы, px/сек
+  var FAST = 430;      // скорость у самого края
+  var roller = null;   // кадр анимации, пока катим
+
+  /* Меряем по видимой области, а не по окну: с открытой клавиатурой
+     это разные вещи (см. glide()). */
+  function seen() {
+    var vv = window.visualViewport;
+    return vv ? { top: vv.offsetTop, height: vv.height }
+      : { top: 0, height: window.innerHeight };
+  }
+
+  // Знак — направление, модуль — скорость. Ноль = палец не у края.
+  function rollSpeed(y) {
+    var v = seen();
+    var edge = Math.min(EDGE, v.height * 0.22);
+    var up = (v.top + edge) - y;                 // насколько зашли в верхнюю полосу
+    var down = y - (v.top + v.height - edge);    // ...и в нижнюю
+    var deep = Math.max(up, down);
+    if (deep <= 0) { return 0; }
+    var k = Math.min(1, deep / edge);
+    // Квадрат, а не прямая: у границы полосы почти шагом — успеваешь
+    // читать, — и разгон только у самого края.
+    var speed = SLOW + (FAST - SLOW) * k * k;
+    return up > down ? -speed : speed;
+  }
+
+  function roll(now) {
+    if (!drag) { roller = null; return; }
+    roller = requestAnimationFrame(roll);
+    if (demo) { return; }
+    // Первый кадр только запоминает время. И ограничиваем шаг: если
+    // вкладка была свёрнута, между кадрами пройдут секунды.
+    var dt = drag.rolled ? Math.min(now - drag.rolled, 50) / 1000 : 0;
+    drag.rolled = now;
+    var speed = rollSpeed(drag.y);
+    if (!speed || !dt) { return; }
+
+    var max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    var to = Math.max(0, Math.min(window.scrollY + speed * dt, max));
+    if (Math.abs(to - window.scrollY) < 0.5) { return; }   // упёрлись в край страницы
+    window.scrollTo(0, to);
+    // Палец стоит, а содержимое едет — гнездо должно ехать вместе с ним.
+    aim(drag.y);
+  }
+
+  function endDrag() {
+    if (!drag) { return; }
+    if (roller) { cancelAnimationFrame(roller); roller = null; }
+    var d = drag, t = d.target;
+    drag = null;   // сразу: палец отпущен, новый жест уже можно начинать
+
+    // Гнездо всё ещё держит место — туда карточка и приземляется.
+    var slot = d.mark.parentNode ? d.mark.getBoundingClientRect() : null;
+
+    function land() {
+      // Снимаем позиции, пока гнездо ещё держит место. Уберём его
+      // раньше — список схлопнется, и перерисовка примет схлопнутое
+      // состояние за исходное: все три раздела дружно подпрыгнут.
+      var was = snap();
+      d.ghost.remove();
+      if (d.mark.parentNode) { d.mark.remove(); }
+      if (t) {
+        var f = find(d.id);
+        if (f && (f.list !== t.list || f.idx !== t.index)) {
+          doc[f.list].splice(f.idx, 1);
+          // t.index уже посчитан БЕЗ перетаскиваемой карточки,
+          // поэтому после удаления поправка не нужна.
+          doc[t.list].splice(Math.min(t.index, doc[t.list].length), 0, f.task);
+          queue();
+        }
+      }
+      // Старую (спрятанную) карточку не возвращаем в поток: draw()
+      // всё равно пересоберёт разметку с нуля.
+      draw(was);
+    }
+
+    if (!slot) { land(); return; }
+    d.ghost.classList.add('landing');
+    d.ghost.style.transition =
+      'left .19s cubic-bezier(.2,.8,.2,1), top .19s cubic-bezier(.2,.8,.2,1),' +
+      ' transform .19s ease, box-shadow .19s ease';
+    d.ghost.style.left = slot.left + 'px';
+    d.ghost.style.top = slot.top + 'px';
+    setTimeout(land, 200);
+  }
+
+  document.addEventListener('pointerup', endDrag);
+  document.addEventListener('pointercancel', endDrag);
+
+  /* --- смахивание влево: из-под карточки выезжает корзина --- */
+
+  var SHIFT = 140;    // ширина обеих кнопок вместе с зазорами
+  var swipe = null;   // текущее движение пальца
+  var opened = null;  // карточка, которая сейчас показывает корзину
+
+  function shut(item) {
+    if (!item) { return; }
+    var f = item.querySelector('.card');
+    if (f) { f.style.transform = ''; }
+    item.classList.remove('open');
+    if (opened === item) { opened = null; }
+  }
+
+  // true — значит клик надо съесть: карточка была отодвинута,
+  // палец просто закрывает её, а не открывает правку текста.
+  function closeSwipe(item) {
+    if (opened && opened === item) { shut(item); return true; }
+    if (opened) { shut(opened); }
+    return false;
+  }
+
+  document.addEventListener('pointerdown', function (e) {
+    if (e.target.closest('.trash, .fav')) { return; }   // жмут кнопку — не мешаем
+    var item = e.target.closest('.item');
+    if (opened && opened !== item) { shut(opened); }
+    if (!item || e.target.closest('.grip')) { return; }
+    // Палец в открытом поле ввода — это установка курсора и выделение
+    // текста. Никакого смахивания, иначе вместо курсора едет карточка.
+    if (e.target.tagName === 'TEXTAREA') { return; }
+    // Палец на кнопке — это нажатие, а не жест. Без этой проверки лёгкий
+    // снос пальца в сторону при тапе по чекбоксу заводил смахивание,
+    // и следующий за ним клик глушился — приходилось жать второй раз.
+    if (e.target.closest('button')) { return; }
+    if (!item.querySelector('.trash')) { return; }   // архив и «сделано» не смахиваются
+    swipe = {
+      item: item, card: item.querySelector('.card'),
+      x: e.clientX, y: e.clientY, axis: null,
+      // если карточка уже открыта — продолжаем с её нынешнего сдвига
+      from: item.classList.contains('open') ? -SHIFT : 0,
+      dx: item.classList.contains('open') ? -SHIFT : 0
+    };
+  });
+
+  document.addEventListener('pointermove', function (e) {
+    if (!swipe || drag) { return; }
+    var dx = e.clientX - swipe.x, dy = e.clientY - swipe.y;
+    if (!swipe.axis) {
+      // Пока направление неясно — не мешаем странице скроллиться.
+      if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { swipe = null; return; }
+      if (Math.abs(dx) < 14) { return; }   // запас на дрожь пальца при тапе
+      swipe.axis = 'x';
+      swipe.item.classList.add('swiping');   // на время жеста — без анимации
+    }
+    swipe.dx = Math.max(-SHIFT, Math.min(0, swipe.from + dx));
+    swipe.card.style.transform = 'translateX(' + swipe.dx + 'px)';
+  });
+
+  function endSwipe() {
+    if (!swipe) { return; }
+    var s = swipe;
+    swipe = null;
+    s.item.classList.remove('swiping');
+    if (s.axis !== 'x') { return; }      // это был обычный тап
+    // После жеста браузер добивает касание обычным кликом — он попадал
+    // в текст карточки и тут же её закрывал. Глушим его, но ТОЛЬКО если
+    // жест что-то изменил: иначе съедали бы и безобидные нажатия.
+    // Порог маленький: годится и короткий жест, и длинный.
+    if (s.dx <= -24) {
+      afterButton(260);
+      s.card.style.transform = 'translateX(-' + SHIFT + 'px)';
+      s.item.classList.add('open');
+      opened = s.item;
+    } else {
+      if (s.from !== 0) { afterButton(260); }   // закрывали открытую карточку
+      shut(s.item);
+    }
+  }
+
+  document.addEventListener('pointerup', endSwipe);
+  document.addEventListener('pointercancel', endSwipe);
+
+  /* --- старт --- */
+
+  /* Заглушки вместо пустых списков на первую загрузку. Раньше страница
+     сначала рисовала «пусто» во всех разделах, а через полсекунды —
+     настоящие дела: высота менялась скачком, и всё подпрыгивало. */
+  function skeleton() {
+    var plan = { deadline: 3, free: 4, ideas: 3, done: 2 };
+    Object.keys(plan).forEach(function (name) {
+      var host = document.getElementById(name);
+      var out = '';
+      for (var i = 0; i < plan[name]; i++) {
+        // Разная длина строк, чтобы это читалось как список дел,
+        // а не как таблица одинаковых прямоугольников.
+        var w = 42 + ((i * 37) % 46);
+        out += '<div class="item skel"><div class="card"><div class="face">'
+             + (name === 'done' ? '' : '<span class="sk sk-grip"></span>')
+             + '<span class="sk sk-box"></span>'
+             + '<span class="sk sk-line" style="width:' + w + '%"></span>'
+             + '</div></div></div>';
+      }
+      host.innerHTML = out;
+    });
+  }
+
+  /* --- первый приход: ключа нет, списка нет ------------------------- */
+
+  function newKey() {
+    // 32 байта случайности от криптографического источника, не Math.random:
+    // ключ — это и есть весь доступ к списку.
+    var b = new Uint8Array(32);
+    window.crypto.getRandomValues(b);
+    var out = '';
+    for (var i = 0; i < b.length; i++) { out += ('0' + b[i].toString(16)).slice(-2); }
+    return out;
+  }
+
+  function hello() {
+    draw();   // за приветствием видно пустое приложение целиком
+    var wrap = document.createElement('div');
+    wrap.id = 'hello';
+    wrap.innerHTML =
+      '<div class="sheet"><div class="inner"><b>Список дел</b>' +
+      '<p class="last">Три раздела, «сделано за сегодня», архив и корзина. ' +
+      'Регистрации нет: список привязан к ключу, ключ хранится ' +
+      'в этом браузере. Перенести его на другое устройство можно ' +
+      'из меню в углу.</p>' +
+      '<button class="go">Создать список</button></div></div>';
+    document.body.appendChild(wrap);
+
+    wrap.querySelector('.go').onclick = function () {
+      key = newKey();
+      try { localStorage.setItem(KEY, key); } catch (e) { /* приват — до перезагрузки */ }
+      boot();   // список подтягивается, пока идёт прощание с приветствием
+
+      var sheet = wrap.querySelector('.sheet');
+      var inner = wrap.querySelector('.inner');
+      sheet.style.height = sheet.offsetHeight + 'px';
+      inner.classList.add('gone');
+
+      setTimeout(function () {
+        inner.innerHTML = '<b>Список создан</b>' +
+          '<p class="last">Небольшая демонстрация →</p>';
+        // Высота новой надписи известна только после вставки:
+        // меряем её на невидимом тексте и ведём карточку к ней.
+        sheet.style.height = (inner.offsetHeight + 34) + 'px';
+        inner.classList.remove('gone');
+
+        setTimeout(function () {
+          wrap.className = 'out';
+          setTimeout(function () { wrap.remove(); tour(); }, 400);
+        }, 2000);
+      }, 450);
+    };
+  }
+
+  /* --- показ приёмов: всё делается на настоящем деле ------------------
+     Не картинка и не видео: тур нажимает те же кнопки, что и палец,
+     через настоящие события. Значит он не может разойтись с тем, как
+     приложение работает на самом деле. */
+
+  function tour(again) {
+    var dim = document.createElement('div');
+    dim.id = 'tour';
+    var skip = document.createElement('button');
+    skip.className = 'tourskip';
+    skip.textContent = 'пропустить';
+    document.body.appendChild(dim);
+    document.body.appendChild(skip);
+
+    var alive = true, id = null, timer = null, note = null;
+    // made — дело, заведённое показом. id по ходу обнуляется, а это
+    // держим до конца: по нему показ за собой и убирает.
+    var made = null;
+    // Название раздела показ меняет напоказ, но человек его уже мог
+    // придумать сам — возвращаем как было.
+    var nameWas = null;
+    // Раздел, заведённый показом. По ходу он уезжает в корзину, но
+    // прибрать его надо в любом случае — хоть на середине, хоть в конце.
+    var madeSec = null;
+    demo = true;    // пока идёт показ, поля ввода не забирают фокус
+
+    /* Показ не должен оставлять следов — ни на середине, ни в конце.
+       Прибираем и заведённое дело (где бы оно ни оказалось, хоть
+       в корзине), и подменённое название раздела. */
+    function undo() {
+      var touched = false;
+      if (made) {
+        var f = find(made);
+        if (f) { doc[f.list].splice(f.idx, 1); touched = true; }
+        made = null;
+      }
+      if (nameWas !== null) {
+        doc.names = doc.names || {};
+        if (nameWas) { doc.names.deadline = nameWas; }
+        else { delete doc.names.deadline; }
+        nameWas = null;
+        touched = true;
+      }
+      if (madeSec) {
+        // Раздел мог остаться на странице (показ прервали) или уже
+        // уехать в корзину — убираем и то, и другое.
+        if ((doc.extra || []).indexOf(madeSec) >= 0) {
+          doc.extra = doc.extra.filter(function (n) { return n !== madeSec; });
+          delete doc[madeSec];
+          touched = true;
+        }
+        for (var i = (doc.bin || []).length - 1; i >= 0; i--) {
+          if (doc.bin[i].sec === madeSec) { doc.bin.splice(i, 1); touched = true; }
+        }
+        if (doc.names) { delete doc.names[madeSec]; }
+        madeSec = null;
+        relist();
+      }
+      if (touched) { queue(); draw(); renderTitles(); }
+    }
+
+    /* Прервать показ можно на любом шаге, поэтому прибираем всё, что он
+       мог оставить, в том порядке, в каком оно накладывается друг на
+       друга: сначала нарисованное поверх страницы, потом незаконченные
+       жесты и открытые поля, и только в конце — сами данные. */
+    function stop() {
+      if (!alive) { return; }
+      alive = false;
+      demo = false;
+      clearTimeout(timer);
+
+      // Подсказка и кружки-«пальцы».
+      if (note) { note.remove(); note = null; }
+      [].forEach.call(document.querySelectorAll('.tapdot, .near'),
+        function (n) { n.remove(); });
+
+      // Перетаскивание бросили на середине: копия карточки висит поверх
+      // страницы, а настоящая спрятана. Доводим жест до конца тем же
+      // событием, каким его заканчивает палец.
+      if (drag) {
+        document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+      }
+
+      // Открытые поля: правка дела, черновик, название раздела. У каждого
+      // свой обработчик Escape — он и приберёт за собой как надо.
+      [].forEach.call(document.querySelectorAll('.item textarea, .tt input'),
+        function (f) {
+          f.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        });
+
+      var el = id && document.querySelector('.item[data-id="' + id + '"]');
+      if (el) { shut(el); }        // смахнутая карточка закрывается
+      if (menu) { shutMenu(); }
+      if (ask) { shutAsk(); }
+      undo();                      // дело, название раздела, сам раздел
+      skip.remove();
+      dim.className = 'out';
+      setTimeout(function () { dim.remove(); }, 300);
+    }
+    skip.onclick = stop;
+
+    function card() { return document.querySelector('.item[data-id="' + id + '"]'); }
+
+    /* Часть списка может быть за краем экрана. Перед каждым шагом
+       доводим страницу так, чтобы цель была видна и под ней осталось
+       место для облачка. */
+    function see(el) {
+      if (!el) { return; }
+      var b = el.getBoundingClientRect();
+      if (b.top >= 66 && b.bottom <= window.innerHeight - 100) { return; }
+      var to = window.scrollY + b.top - (window.innerHeight - b.height) / 2;
+      to = Math.max(0, Math.min(to, document.body.scrollHeight - window.innerHeight));
+      try { window.scrollTo({ top: to, behavior: 'smooth' }); }
+      catch (e) { window.scrollTo(0, to); }
+    }
+
+    // Подпись встаёт под целью, а если та у нижнего края — над ней.
+    // drop — сколько ещё опустить подпись, когда она встала снизу.
+    // Нужен там, где после подписи что-то приезжает на её место.
+    var GAP = 14;      // единый зазор между целью и подписью
+
+    function near(el, text, side) {
+      if (note) { note.remove(); note = null; }
+      if (!el) { return; }
+      see(el);
+      var n = document.createElement('div');
+      n.className = 'near';
+      n.textContent = text;
+      document.body.appendChild(n);
+      note = n;
+      var anchor = el;
+
+      function place() {
+        // Шаг мог смениться, пока мы ждали, — тогда это уже чужая подпись.
+        if (note !== n) { return; }
+        var el = anchor;
+        if (!document.body.contains(el)) {
+          // Список перерисовался, и узел, к которому мы привязались,
+          // уже выброшен. Дело-то никуда не делось — находим его строку
+          // заново по id и продолжаем как ни в чём не бывало.
+          var item = el.closest && el.closest('.item');
+          var back = item && item.dataset.id &&
+            document.querySelector('.item[data-id="' + item.dataset.id + '"]');
+          if (!back) { return; }
+          el = anchor = back;
+        }
+        var box = el.getBoundingClientRect();
+        // По вертикали отмеряем не от кнопки, а от того целого, частью
+        // которого она является: от карточки дела — или от всей панели,
+        // если цель лежит внутри меню либо окна вопроса. Иначе зазор
+        // считался от кнопки, а глаз видит край панели в паре пикселей
+        // ниже — и подпись выглядела приклеенной.
+        var host = (el.closest &&
+          (el.closest('#ask .askbox') || el.closest('#menu .sheet') ||
+           el.closest('.item'))) || el;
+        var vbox = host.getBoundingClientRect();
+        var w = n.offsetWidth, h = n.offsetHeight;
+        var left, top;
+
+        if (side === 'right') {
+          // Рядом с целью, а не под ней: под ней сейчас развернётся
+          // панель, и подпись оказалась бы поверх её первой строки.
+          left = box.right + 12;
+          top = box.top + box.height / 2 - h / 2;
+          if (left + w > window.innerWidth - 10) {
+            left = Math.max(10, box.left - w - 12);
+          }
+        } else {
+          left = box.left + box.width / 2 - w / 2;
+          var below = vbox.bottom + GAP;
+          top = below + h < window.innerHeight - 80
+            ? below : Math.max(10, vbox.top - h - GAP);
+        }
+        left = Math.max(10, Math.min(left, window.innerWidth - w - 10));
+        top = Math.max(10, Math.min(top, window.innerHeight - h - 10));
+
+        // Открытая панель — меню или окно вопроса — это не фон, а то,
+        // на что сейчас и смотрят. Подпись поверх неё закрывала как раз
+        // ту строку, которую следующим шагом нажмут. Уводим за край.
+        var panel = document.querySelector('#menu .sheet, #ask .askbox');
+        if (panel) {
+          var pb = panel.getBoundingClientRect();
+          if (left < pb.right && left + w > pb.left &&
+              top < pb.bottom && top + h > pb.top) {
+            top = side === 'right'
+              // Сбоку подпись стоит в полоске заголовка — её надо
+              // приподнять над панелью, а не увозить под неё.
+              ? Math.max(6, Math.min(top, pb.top - h - 6))
+              : (pb.bottom + GAP + h < window.innerHeight
+                ? pb.bottom + GAP
+                : Math.max(10, pb.top - h - GAP));
+          }
+        }
+        // Координаты страницы, а не экрана: облачко приклеено к цели и
+        // не разъезжается с ней, пока страница доезжает до места.
+        n.style.left = (left + window.scrollX) + 'px';
+        n.style.top = (top + window.scrollY) + 'px';
+      }
+
+      /* Обстановка вокруг подписи: открыто ли меню, открыто ли окно
+         вопроса, жив ли ещё узел, к которому мы привязаны. */
+      function scene() {
+        // Высота цели тоже в приметах: у черновика поле ввода
+        // дорастает до своего размера уже после того, как подпись
+        // встала, и зазор без пересчёта выходил меньше положенного.
+        // Положение НЕ учитываем — оно меняется на каждом кадре
+        // прокрутки, и подпись от этого дёргалась бы.
+        return (document.querySelector('#menu .sheet') ? 'm' : '') +
+          (document.querySelector('#ask .askbox') ? 'a' : '') +
+          (document.body.contains(anchor)
+            // Огрубляем до восьмушек: дробный пиксель после перерисовки
+            // не повод трогать подпись, а выросшая строка текста — повод.
+            ? 'e' : '');
+      }
+
+      var was = scene();
+      place();
+      // Два уточнения сразу вслед: у черновика поле ввода дорастает до
+      // своего размера уже после вставки, и зазор без пересчёта выходил
+      // меньше положенного. Оба попадают внутрь появления подписи
+      // (riseIn идёт 0.3 с), поэтому глаз перестановки не видит.
+      requestAnimationFrame(place);
+      setTimeout(place, 80);
+      // Меню и окно вопроса открываются СЛЕДУЮЩИМ шагом, через пару
+      // секунд, — когда подпись уже стоит и обходить нечего. Значит,
+      // ждать надо не времени, а СОБЫТИЯ. Переставляем только когда
+      // обстановка изменилась: иначе подпись дёргалась на каждом тике,
+      // подстраиваясь под ещё не доехавшую прокрутку.
+      var watch = setInterval(function () {
+        if (note !== n || !alive) { return clearInterval(watch); }
+        var now = scene();
+        if (now === was) { return; }
+        was = now;
+        place();
+      }, 100);
+      setTimeout(function () { clearInterval(watch); }, 3500);
+    }
+
+    // Круг вдвое больше цели. Верхнюю границу держим, иначе на карточке
+    // во весь экран он превратился бы в заливку.
+    function dot(el) {
+      if (!el) { return; }
+      see(el);
+      var box = el.getBoundingClientRect();
+      var size = Math.max(44, Math.min(Math.max(box.width, box.height) * 2, 130));
+      var d = document.createElement('div');
+      d.className = 'tapdot';
+      d.style.width = size + 'px';
+      d.style.height = size + 'px';
+      d.style.left = (box.left + box.width / 2 - size / 2 + window.scrollX) + 'px';
+      d.style.top = (box.top + box.height / 2 - size / 2 + window.scrollY) + 'px';
+      document.body.appendChild(d);
+      setTimeout(function () { d.remove(); }, 1050);
+    }
+
+    // Сначала круг, и только потом само нажатие: иначе разметка
+    // меняется раньше, чем видно, куда нажали.
+    function press(el, how) {
+      if (!el) { return; }
+      dot(el);
+      setTimeout(function () {
+        if (!alive) { return; }
+        if (how === 'click') { el.click(); }
+        else {
+          el.dispatchEvent(new PointerEvent('pointerdown',
+            { bubbles: true, cancelable: true }));
+        }
+      }, 320);
+    }
+    function tap(sel, how) {
+      var el = card();
+      press(el && el.querySelector(sel), how);
+    }
+
+    function typeInto(ta, text, done) {
+      var i = 0;
+      (function next() {
+        if (!alive) { return; }
+        if (i >= text.length) { return setTimeout(done, 900); }
+        ta.value += text.charAt(i++);
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        setTimeout(next, 82);
+      }());
+    }
+
+    function type(text, done) {
+      var ta = document.querySelector('#deadline textarea');
+      return ta ? typeInto(ta, text, done) : done();
+    }
+
+    // Стереть хвост и дописать новый: так видно, что дело правится,
+    // а не заводится заново.
+    function retype(cut, add, done) {
+      var el = card();
+      var ta = el && el.querySelector('textarea');
+      if (!ta) { return done(); }
+      var n = 0;
+      (function back() {
+        if (!alive) { return; }
+        if (n++ < cut) {
+          ta.value = ta.value.slice(0, -1);
+          ta.dispatchEvent(new Event('input', { bubbles: true }));
+          return setTimeout(back, 110);
+        }
+        setTimeout(function () { typeInto(ta, add, done); }, 450);
+      }());
+    }
+
+    /* Круг, который держится на экране весь жест и едет за «пальцем». */
+    function hand(x, y, size) {
+      size = size || 58;
+      var sx = window.scrollX, sy = window.scrollY;
+      var d = document.createElement('div');
+      d.className = 'tapdot hold';
+      d.style.width = size + 'px';
+      d.style.height = size + 'px';
+      document.body.appendChild(d);
+      var self = {
+        move: function (nx, ny) {
+          d.style.left = (nx - size / 2 + sx) + 'px';
+          d.style.top = (ny - size / 2 + sy) + 'px';
+        },
+        end: function () {
+          d.classList.add('gone');
+          setTimeout(function () { d.remove(); }, 320);
+        }
+      };
+      self.move(x, y);
+      return self;
+    }
+
+    /* Смахивание показываем жестом, а не подстановкой сдвига: приложение
+       получает ту же цепочку событий, что и от пальца, и карточка
+       открывается по своим правилам, а не по нашим. */
+    function swipeOpen(done) {
+      var el = card();
+      var c = el && el.querySelector('.card');
+      if (!c) { return done(); }
+      var b = c.getBoundingClientRect();
+      var x = b.right - 26, y = b.top + b.height / 2;
+      var h = hand(x, y);
+      setTimeout(function () {
+        if (!alive) { return h.end(); }
+        c.dispatchEvent(new PointerEvent('pointerdown',
+          { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+        var n = 0, total = 18, dist = SHIFT + 14;
+        (function move() {
+          if (!alive) { return h.end(); }
+          n++;
+          var at = x - dist * (n / total);
+          h.move(at, y);
+          document.dispatchEvent(new PointerEvent('pointermove',
+            { bubbles: true, cancelable: true, clientX: at, clientY: y }));
+          if (n < total) { return setTimeout(move, 36); }
+          setTimeout(function () {
+            if (!alive) { return h.end(); }
+            document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+            h.end();
+            setTimeout(done, 500);
+          }, 260);
+        }());
+      }, 350);
+    }
+
+    /* Перетаскивание руками не подделаешь одним событием: приложение
+       ждёт всю цепочку pointerdown -> много pointermove -> pointerup,
+       ровно как от пальца. Цель пересчитываем на каждом шаге —
+       список под карточкой всё время перекладывается. */
+    function dragTo(listName, done) {
+      var el = card();
+      var grip = el && el.querySelector('.grip');
+      var host = document.getElementById(listName);
+      if (!grip || !host) { return done(); }
+      var gb = grip.getBoundingClientRect();
+      var x = gb.left + gb.width / 2, y = gb.top + gb.height / 2;
+      var h = hand(x, y);
+      setTimeout(function () {
+        if (!alive) { return h.end(); }
+        grip.dispatchEvent(new PointerEvent('pointerdown',
+          { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+        var n = 0, total = 20;
+        (function move() {
+          if (!alive) { return h.end(); }
+          n++;
+          var to = host.getBoundingClientRect().top + 6;
+          var at = y + (to - y) * (n / total);
+          h.move(x, at);
+          document.dispatchEvent(new PointerEvent('pointermove',
+            { bubbles: true, cancelable: true, clientX: x, clientY: at }));
+          if (n < total) { return setTimeout(move, 45); }
+          setTimeout(function () {
+            if (!alive) { return h.end(); }
+            document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+            h.end();
+            setTimeout(done, 500);
+          }, 400);
+        }());
+      }, 380);
+    }
+
+    function plus() { return document.querySelector('.plus[data-add="deadline"]'); }
+    function pen() { return document.querySelector('.pen[data-ren="deadline"]'); }
+
+    // Пункт меню ищем по подписи: порядок пунктов ещё будет меняться,
+    // а «Добавить новый раздел» останется собой.
+    function menuRow() {
+      var rows = document.querySelectorAll('#menu .row');
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].textContent.indexOf('Добавить новый раздел') >= 0) { return rows[i]; }
+      }
+      return null;
+    }
+    function secEl() {
+      return madeSec && document.querySelector('section[data-sec="' + madeSec + '"]');
+    }
+
+    // Первое число — пауза перед шагом. В ней уже заложены полсекунды
+    // на то, чтобы глаз успел заметить результат прошлого действия.
+    var steps = [
+      [1100, function () { near(plus(), 'Дело добавляется сюда'); dot(plus()); }],
+      [1400, function () {
+        plus().click();
+        // Черновик встаёт в конец списка, поэтому ищем его по полю
+        // ввода, а не по месту.
+        var ta = document.querySelector('#deadline textarea');
+        var el = ta && ta.closest('.item');
+        id = el && el.dataset.id;
+        made = id;
+        near(el, 'Текст пишется прямо в списке');
+      }],
+      [1400, function (next) { type('Купить молоко', next); return true; }],
+      [500, function () { tap('.ok'); }],
+
+      /* правка дела */
+      [1700, function () { near(card(), 'Нажмите на дело — текст можно поправить'); }],
+      [1700, function () { tap('.txt', 'click'); }],
+      [1300, function (next) { retype(6, 'хлеб', next); return true; }],
+      [600, function () { tap('.ok'); }],
+
+      /* перенос в другой раздел */
+      [1700, function () {
+        var el = card();
+        near(el && el.querySelector('.grip'),
+          'За полоску слева дело переносится в другой раздел');
+      }],
+      [1500, function (next) {
+        // Дело переезжает в другой раздел — и подпись, оставшаяся на
+        // старом месте, оказывалась то под ним, то прямо на нём.
+        // Переставляем её заново, когда дело уже приземлилось.
+        dragTo('free', function () {
+          near(card(), 'За полоску слева дело переносится в другой раздел');
+          next();
+        });
+        return true;
+      }],
+
+      /* смахивание, звезда, корзина */
+      [1700, function () { near(card(), 'Смахните дело влево — под ним кнопки'); }],
+      [2300, function (next) { swipeOpen(next); return true; }],
+      [1500, function () {
+        var el = card();
+        near(el && el.querySelector('.fav'), 'Звезда выделяет важное');
+      }],
+      [1700, function () { tap('.fav'); }],
+      [3100, function () { near(card(), 'Нажать ещё раз — выделение снимется'); }],
+      [1700, function (next) { swipeOpen(next); return true; }],
+      [1200, function () { tap('.fav'); }],
+      [3100, function () { near(card(), 'А корзина удаляет дело'); }],
+      [1700, function (next) { swipeOpen(next); return true; }],
+      [1200, function () {
+        var el = card();
+        near(el && el.querySelector('.trash'), 'Дело уйдёт в корзину на семь дней');
+      }],
+      [2000, function () { tap('.trash'); id = null; }],
+
+      /* название раздела */
+      [2000, function () { near(pen(), 'Название раздела можно поменять'); dot(pen()); }],
+      [1600, function () {
+        nameWas = (doc.names && doc.names.deadline) || '';
+        press(pen(), 'click');
+      }],
+      [1500, function (next) {
+        var inp = document.querySelector('#t-deadline input');
+        if (!inp) { next(); return true; }
+        near(inp, 'Впишите своё название');
+        inp.value = '';                     // старое имя было выделено целиком
+        typeInto(inp, 'В отпуске', next);
+        return true;
+      }],
+      [700, function () {
+        press(pen().parentNode.querySelector('.okmini:not(.nomini)'));
+      }],
+      [1600, function () {
+        near(document.getElementById('t-deadline'), 'Готово, раздел переименован');
+      }],
+
+      /* меню */
+      [2200, function () {
+        var b = document.getElementById('burger');
+        // Не под кнопкой, а справа от заголовка: под кнопкой сейчас
+        // развернётся меню, и подпись села бы на его первую строку —
+        // ту самую, которую следующим шагом и нажмут.
+        near(document.querySelector('header h1') || b, 'В углу — меню', 'right');
+        dot(b);
+      }],
+      [1600, function () { press(document.getElementById('burger'), 'click'); }],
+      [1900, function () {
+        near(document.querySelector('#menu .sheet'), 'Здесь дополнительные опции');
+      }],
+
+      /* свой раздел: завести и убрать */
+      [2600, function () {
+        var r = menuRow();
+        if (!r) { return; }
+        near(r, 'Свой раздел заводится отсюда');
+        dot(r);
+      }],
+      [1700, function () {
+        var r = menuRow();
+        if (r) { press(r, 'click'); }
+        else { shutMenu(); }
+      }],
+      // Меню гаснет 220 мс, потом раздел встаёт на место и страница
+      // доматывается к нему — ждём и то, и другое.
+      [2100, function () {
+        var own = doc.extra || [];
+        madeSec = own.length ? own[own.length - 1] : null;
+        var s = secEl();
+        near(s && s.querySelector('.tt'),
+          'Новый раздел. Имя меняется карандашом, дела добавляются плюсом');
+      }],
+      [2600, function () {
+        var s = secEl();
+        near(s && s.querySelector('.del'), 'А корзина убирает раздел целиком');
+        dot(s && s.querySelector('.del'));
+      }],
+      [1700, function () {
+        var s = secEl();
+        press(s && s.querySelector('.del'), 'click');
+      }],
+      [1400, function () {
+        near(document.querySelector('#ask .askbox'),
+          'Пять секунд на подумать — кнопка загорится сама');
+      }],
+      // Отсчёт идёт пять секунд; ждём его целиком и ещё немного.
+      [5600, function () {
+        var y = document.querySelector('#ask .yes');
+        if (y) { near(y, 'Теперь можно'); dot(y); }
+      }],
+      [1500, function () {
+        var y = document.querySelector('#ask .yes');
+        if (y && !y.disabled) { y.click(); } else { shutAsk(); }
+      }],
+      [1600, function () {
+        near(document.getElementById('binBtn'),
+          'Раздел уехал в корзину целиком — вернуть можно семь дней');
+        dot(document.getElementById('binBtn'));
+      }],
+
+      [3000, function () { near(plus(), 'Готово. Теперь добавляйте свои дела'); }],
+      [3500, stop]
+    ];
+
+    (function run(n) {
+      if (!alive || n >= steps.length) { return; }
+      timer = setTimeout(function () {
+        if (!alive) { return; }
+        var waits = steps[n][1](function () { run(n + 1); });
+        if (!waits) { run(n + 1); }
+      }, steps[n][0]);
+    }(0));
+  }
+
+  function boot() {
+    /* Сначала рисуем прошлое состояние из памяти браузера — оно почти
+       всегда верное, и страница появляется мгновенно и на своих местах.
+       Ответ сервера потом просто уточнит список, а FLIP сгладит разницу.
+       Заглушки нужны только тем, кто открыл приложение впервые. */
+    var cached = localStorage.getItem(CACHE);
+    if (cached) {
+      try {
+        doc = JSON.parse(cached);
+        relist();
+        purge();
+        draw();
+      } catch (e) {
+        skeleton();
+      }
+    } else {
+      skeleton();
+    }
+
+    pull();
+    // Вернулся к вкладке — подтянуть, вдруг правил с телефона.
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden && !dirty) { pull(); }
+    });
+    setInterval(function () { if (!dirty && !document.hidden) { pull(); } }, 60000);
+
+    // Отдельный сторож полуночи. Опрос сервера может не сработать —
+    // нет связи, открыта правка, есть несохранённое, — а список должен
+    // очиститься ровно в 00:00 в любом случае.
+    var lastDay = midnight();
+    setInterval(function () {
+      var day = midnight();
+      if (day === lastDay || busy()) { return; }
+      lastDay = day;
+      if (purge()) { queue(); }
+      draw();
+    }, 30000);
+  }
+
+  if (key) { boot(); } else { hello(); }
+}());
+</script>
+
+<script>
+/* Регистрация service worker. Без него Chrome считает страницу обычным
+   сайтом и вешает на экран ярлык с буквой домена вместо иконки. */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function (e) {
+      console.warn('sw:', e);   // не работает — приложение всё равно живёт
+    });
+  });
+}
+</script>
+</body>
+</html>
