@@ -1226,6 +1226,18 @@ section[data-sec].born { animation: riseIn .42s cubic-bezier(.2,.8,.2,1); }
     localStorage.setItem(KEY, m[1]);
     history.replaceState(null, '', location.pathname);
   }
+  /* Ссылку могут вставить во вкладку, где список уже открыт. Тогда
+     меняется только часть после решётки, а это для браузера не переход:
+     страница не перезагружается, разбор выше не отработает, и человек
+     смотрит на прежний список, решив, что перенос не сработал.
+     Ловим смену решётки отдельно и перезагружаемся сами. */
+  window.addEventListener('hashchange', function () {
+    var got = location.hash.match(/k=([a-f0-9]{64})/i);
+    if (!got) { return; }
+    try { localStorage.setItem(KEY, got[1].toLowerCase()); } catch (e) { /* приват */ }
+    location.replace(location.pathname);
+  });
+
   var key = localStorage.getItem(KEY);
 
   var doc = { updated: '', deadline: [], free: [], ideas: [], done: [], archive: [], bin: [] };
