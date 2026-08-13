@@ -4,17 +4,17 @@ After=network.target
 
 [Service]
 Type=simple
-User=edgelab
-Group=edgelab
-WorkingDirectory=/home/edgelab/tools/todo
-ExecStart=/usr/bin/python3 /home/edgelab/tools/todo/server.py
+User=youruser
+Group=youruser
+WorkingDirectory=/home/youruser/todo
+ExecStart=/usr/bin/python3 /home/youruser/todo/server.py
 Restart=always
 RestartSec=3
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/edgelab/tools/todo/data
+ReadWritePaths=/home/youruser/todo/data
 
 [Install]
 WantedBy=multi-user.target
