@@ -2588,21 +2588,45 @@ section[data-sec].born { animation: riseIn .42s cubic-bezier(.2,.8,.2,1); }
   var MOVE = 'transform .3s cubic-bezier(.2,.8,.2,1)';
   var justAdded = null;   // id строки, которая должна проявиться
 
-  function snap() {
-    var map = {};
+  /* Заголовки разделов едут по тем же правилам, что и карточки.
+     Двигаем именно h2, а не всю section: секция — родитель списка,
+     сдвинув её, мы утащили бы вместе с ней все карточки внутри,
+     а у каждой из них уже есть собственный сдвиг. Вышло бы двойное
+     смещение. h2 — сосед списка, его можно двигать в одиночку. */
+  function headKey(h) {
+    var sec = h.parentNode;
+    return 'h:' + (sec.dataset.sec || sec.id || h.id || '');
+  }
+
+  function moving() {
+    var out = [];
     [].forEach.call(document.querySelectorAll('.item[data-id]'), function (el) {
       if (el.classList.contains('ghost')) { return; }
-      var r = el.getBoundingClientRect();
+      out.push(['i:' + el.dataset.id, el]);
+    });
+    [].forEach.call(document.querySelectorAll('section > h2'), function (el) {
+      out.push([headKey(el), el]);
+    });
+    return out;
+  }
+
+  function snap() {
+    var map = {};
+    moving().forEach(function (pair) {
+      var r = pair[1].getBoundingClientRect();
       if (!r.height) { return; }   // спрятанная на время перетаскивания
-      map[el.dataset.id] = r;
+      map[pair[0]] = r;
     });
     return map;
   }
 
   function flip(before) {
-    [].forEach.call(document.querySelectorAll('.item[data-id]'), function (el) {
-      if (el.classList.contains('in')) { return; }   // у новой строки своя анимация
-      var was = before[el.dataset.id];
+    moving().forEach(function (pair) {
+      var el = pair[1];
+      // у новой строки и у нового раздела своя анимация появления
+      if (el.classList.contains('in')) { return; }
+      if (el.parentNode.classList.contains('born')) { return; }
+      var was = before[pair[0]];
       if (!was) { return; }
       var now = el.getBoundingClientRect();
       var dx = was.left - now.left, dy = was.top - now.top;
@@ -2720,7 +2744,11 @@ section[data-sec].born { animation: riseIn .42s cubic-bezier(.2,.8,.2,1); }
       });
     });
     justAdded = null;
-    flip(before);
+
+    /* Тексты заголовков проставляем ДО flip(). Счётчик «Сделано за
+       сегодня — N» и пометка архива живут внутри h2, а h2 теперь тоже
+       участвует в анимации: подмени текст после замера — и заголовок
+       доедет не туда, где он на самом деле окажется. */
     renderTitles();
     document.getElementById('cnt').textContent = doc.done.length;
     var arcCnt = document.getElementById('arcCnt');
@@ -2733,6 +2761,8 @@ section[data-sec].born { animation: riseIn .42s cubic-bezier(.2,.8,.2,1); }
       });
     }
     document.getElementById('binCnt').textContent = doc.bin.length || '';
+
+    flip(before);
 
     // Черновик рисуется уже открытым на ввод.
     var d = document.querySelector('.item .ok');
