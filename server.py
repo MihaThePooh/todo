@@ -22,12 +22,16 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE = pathlib.Path(__file__).resolve().parent
-DATA = BASE / "data"
+# Папка данных и порт берутся из окружения: иначе тесты пришлось бы
+# гонять на боевом списке дел, а это ровно один неверный запрос до
+# потери настоящих задач.
+DATA = pathlib.Path(os.environ.get("TODO_DATA") or (BASE / "data"))
 STORE = DATA / "todo.json"
 LISTS = DATA / "lists"
 BACKUPS = DATA / "backups"
-TOKEN_FILE = BASE / "token"
-HOST, PORT = "127.0.0.1", 8787
+TOKEN_FILE = DATA / "token" if os.environ.get("TODO_DATA") else BASE / "token"
+HOST = "127.0.0.1"
+PORT = int(os.environ.get("TODO_PORT") or 8787)
 KEEP_BACKUPS = 20
 MAX_BODY = 2 * 1024 * 1024
 
